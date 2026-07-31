@@ -112,8 +112,23 @@ Lo que conviene saber sin abrir el otro documento:
 
 ```bash
 docker build -t asistente-ia .
+```
+
+```bash
 docker run -p 8000:8000 --env-file .env asistente-ia
 ```
+
+La imagen corre como **usuario sin privilegios** (`asistente`, uid 10001), trae
+`HEALTHCHECK` propio y arranca uvicorn con `--proxy-headers` para respetar las
+cabeceras del balanceador.
+
+> **Un solo worker por contenedor.** Los cachés (embeddings, loterías,
+> acumulados, resultados) viven en memoria y son por proceso: varios workers
+> duplicarían el trabajo sin compartir nada. Para escalar, más contenedores.
+
+> El `HEALTHCHECK` tiene un `start-period` de 90 s porque al arrancar se
+> precalculan los embeddings contra Bedrock y uvicorn no acepta conexiones
+> hasta que termina. Sin ese margen, el contenedor se reiniciaría en bucle.
 
 ---
 

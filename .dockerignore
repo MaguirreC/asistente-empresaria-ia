@@ -1,0 +1,36 @@
+# Lo que no necesita la imagen. Achica el contexto de build (el .venv solo ya
+# pesa cientos de megas) y evita que algo sensible entre por descuido.
+#
+# OJO: no agregar un "*.md" genérico. Los .md de app/knowledge/ SON la base de
+# conocimiento del asistente; sin ellos el servicio arranca pero responde vacío.
+# Por eso abajo se excluyen solo los .md de la raíz, con "/".
+
+.git/
+.gitignore
+.dockerignore
+
+# Entornos virtuales locales
+.venv/
+venv/
+env/
+
+# Secretos: nunca deben llegar a la imagen. El Dockerfile ya copia solo
+# requirements.txt y app/, esto es la segunda barrera.
+.env
+.env.*
+
+# Compilados de Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Documentación y material interno (no lo necesita el runtime)
+/*.md
+*.docx
+
+# Herramientas del entorno de desarrollo
+.claude/
+.vscode/
+.idea/
+.DS_Store
+*.log
