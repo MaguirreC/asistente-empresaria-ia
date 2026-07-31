@@ -366,6 +366,81 @@ reutilizar el mismo componente.
 
 Guía al usuario paso a paso mientras está en la página de un producto.
 
+### 7.0 Ejemplo completo: alguien pide ayuda para hacer un chance
+
+Escenario: el usuario está en la pantalla de Chance y pulsa **"¿Necesitas
+ayuda?"**.
+
+**Paso 1 — El front abre el widget y dispara el guion.** No manda al usuario a
+escribir nada: pulsó un botón, así que la intención ya es conocida.
+
+```json
+POST /chat
+{
+  "messages": [{ "role": "user", "content": "necesito ayuda" }],
+  "action": "ayuda_compra",
+  "contexto": { "modulo": "chance" },
+  "autenticado": true
+}
+```
+
+Respuesta (**gratis**, no pasa por el modelo — llega en un solo `delta`):
+
+```
+data: {"delta": "¡Hola! Nuestro asistente virtual te guiará paso a paso…\n\nAntes de comprar, hay 4 cosas que decidir:\n1. **La modalidad** — Uña, Pata, Directo…\n…\n¿Ya sabes qué modalidad quieres jugar, o te explico las diferencias primero?"}
+data: {"done": true}
+```
+
+El front lo pinta como mensaje del asistente y lo agrega al historial.
+
+**Paso 2 — El usuario responde.** Escribe *"explicame las diferencias"*. El
+front manda el historial completo **y sigue mandando `contexto`**:
+
+```json
+POST /chat
+{
+  "messages": [
+    { "role": "user", "content": "necesito ayuda" },
+    { "role": "assistant", "content": "¡Hola! Nuestro asistente virtual te guiará…" },
+    { "role": "user", "content": "explicame las diferencias" }
+  ],
+  "contexto": { "modulo": "chance" },
+  "autenticado": true
+}
+```
+
+Sin `action` esta vez: es texto libre. Ahora **sí** responde el modelo, y llega
+escribiéndose en vivo:
+
+```
+data: {"delta": "Claro. En el chance"}
+data: {"delta": " tradicional hay"}
+data: {"delta": " varias modalidades…"}
+…
+data: {"usage": {"costo_usd": 0.0054}}
+data: {"done": true}
+```
+
+**Paso 3 — El usuario pregunta algo que necesita un dato en vivo:** *"¿alcanzo
+a jugar hoy?"*. Misma petición, y la respuesta ahora pasa por una herramienta:
+
+```
+data: {"delta": "El Dorado cierra a…"}          ← respuesta prematura
+data: {"descartar": true}                        ← borrala
+data: {"progreso": "Consultando las loterías de hoy…"}
+data: {"delta": "Sí, alcanzas: quedan"}          ← la buena, ya con el dato
+data: {"delta": " 3 loterías abiertas…"}
+data: {"usage": {"costo_usd": 0.0121}}
+data: {"done": true}
+```
+
+**Si el usuario sale de la pantalla de Chance**, el front deja de mandar
+`contexto` y listo — no hay que avisar nada más.
+
+> **Lo único que el front tiene que recordar en todo el flujo:** mandar el
+> historial completo, seguir mandando `contexto.modulo` mientras esté en el
+> producto, y agregar cada respuesta del asistente al historial.
+
 ### 7.1 Arrancar el flujo (botón "¿Necesitas ayuda?")
 
 ```json
@@ -486,7 +561,119 @@ sugerencia.
 
 ---
 
-## 10. Probarlo sin el front
+## 10. Probarlo con Postman
+
+👉 **Hay una colección lista para importar: [`postman_collection.json`](postman_collection.json)**
+
+En Postman: **Import → File** y elegí ese archivo. Trae **23 peticiones en 6
+carpetas**, cada una con su explicación de qué verifica y qué esperar.
+
+La URL está en la variable `base_url` de la colección: si el servicio cambia de
+dirección, se toca en un solo lugar.
+
+Recorrido sugerido la primera vez: carpeta **1** (que levanta), **2** (lo que
+no cuesta tokens), **3** (el co-piloto de compra) y **4** (donde entra el
+modelo).
+
+Base: `https://as-eb4b47ff567b437e9e2508de6254bf9f.ecs.us-east-1.on.aws`
+
+En todas las peticiones a `/chat`: método **POST**, header
+`Content-Type: application/json`, y el cuerpo en **Body → raw → JSON**.
+
+**Empezar por lo más simple** (`GET /health`, sin cuerpo):
+
+```
+GET {{base}}/health
+```
+
+**El menú** (`GET`, tampoco lleva cuerpo):
+
+```
+GET {{base}}/bienvenida?autenticado=false
+```
+
+**Una pregunta normal:**
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "¿cuánto paga un directo de 3 cifras?" }
+  ],
+  "autenticado": false
+}
+```
+
+**Una opción del menú** (gratis, no toca el modelo):
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "necesito ayuda" }
+  ],
+  "action": "contacto",
+  "autenticado": false
+}
+```
+
+**El co-piloto de compra** (el ejemplo de la sección 7.0):
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "necesito ayuda" }
+  ],
+  "action": "ayuda_compra",
+  "contexto": { "modulo": "chance" },
+  "autenticado": true
+}
+```
+
+**Una conversación con historial** — así es como el front manda de verdad:
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "necesito ayuda" },
+    { "role": "assistant", "content": "¡Hola! Nuestro asistente virtual te guiará paso a paso…" },
+    { "role": "user", "content": "explicame las diferencias" }
+  ],
+  "contexto": { "modulo": "chance" },
+  "autenticado": true
+}
+```
+
+### ⚠️ Postman no sirve para verificar el streaming
+
+Postman **acumula la respuesta y te la muestra completa al final**. Vas a ver
+todos los eventos `data:` juntos, así que sirve para revisar **qué** responde,
+pero no para comprobar que llega progresivamente.
+
+Para eso hace falta `curl -N` (la `-N` desactiva el buffering):
+
+```bash
+curl -N -X POST https://as-eb4b47ff567b437e9e2508de6254bf9f.ecs.us-east-1.on.aws/chat -H "Content-Type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"explicame las modalidades del chance\"}]}"
+```
+
+Si el texto va apareciendo de a poco, el streaming funciona. Si aparece todo
+de golpe tras varios segundos, algo lo está bufferizando.
+
+### Cómo leer la respuesta
+
+Llega como texto plano, un evento por línea, separados por línea en blanco:
+
+```
+data: {"delta": "El chance es…"}
+
+data: {"usage": {"costo_usd": 0.0054}}
+
+data: {"done": true}
+```
+
+La respuesta que ve el usuario es la **concatenación de todos los `delta`**, en
+orden. Un truco útil para depurar: si **no** aparece el evento `usage`, esa
+respuesta la resolvió el router y **no costó tokens**.
+
+## 11. Probarlo sin el front
 
 El servicio trae una interfaz de pruebas en `http://localhost:8000` que
 reproduce todo el contrato: el menú de bienvenida, el interruptor **🔓 Sesión

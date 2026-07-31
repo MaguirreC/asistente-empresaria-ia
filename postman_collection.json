@@ -1,0 +1,735 @@
+{
+  "info": {
+    "name": "Asistente Virtual — Facilísimo",
+    "description": "Colección para probar el asistente virtual.\n\n**Antes de empezar:** revisa la variable `base_url` en la pestaña *Variables* de la colección.\n\n### Cómo leer las respuestas\n`/chat` responde en streaming (SSE): texto plano, un evento `data:` por línea. La respuesta que ve el usuario es la concatenación de todos los `delta`, en orden.\n\n**Truco para depurar:** si NO aparece el evento `usage`, esa respuesta la resolvió el router y no costó tokens.\n\n### Postman no sirve para verificar el streaming\nPostman acumula la respuesta y la muestra completa al final. Sirve para ver QUÉ responde, no para comprobar que llega progresivamente. Para eso hace falta `curl -N`.\n\nContrato completo: CONTRATO_FRONT.md",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://as-eb4b47ff567b437e9e2508de6254bf9f.ecs.us-east-1.on.aws",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 · Salud y menú",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Lo primero que hay que probar. Si esto falla, el servicio no está arriba."
+          }
+        },
+        {
+          "name": "Bienvenida — usuario anónimo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bienvenida?autenticado=false",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bienvenida"
+              ],
+              "query": [
+                {
+                  "key": "autenticado",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Lo que el front pide al abrir el widget. Devuelve 7 opciones, incluida «Cómo me registro»."
+          }
+        },
+        {
+          "name": "Bienvenida — con sesión iniciada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/bienvenida?autenticado=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bienvenida"
+              ],
+              "query": [
+                {
+                  "key": "autenticado",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Mismo endpoint con sesión: 8 opciones. Desaparece «Cómo me registro» y aparecen «Ver mi saldo» y «Mis compras».\n\nOJO: el mismo número significa cosas distintas según el estado."
+          }
+        }
+      ],
+      "description": "Los dos endpoints que no cuestan nada y no tocan el modelo."
+    },
+    {
+      "name": "2 · Opciones del menú (gratis)",
+      "item": [
+        {
+          "name": "Pulsar un botón — Contacto y PQRS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"necesito ayuda\"\n    }\n  ],\n  \"action\": \"contacto\",\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Cuando el usuario pulsa un botón, el front manda `action`.\n\nFíjate que además del texto llega un evento `navegacion`: el front debe pintar un botón que lleve al apartado de PQRS."
+          }
+        },
+        {
+          "name": "Escribir el número en vez de pulsar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"assistant\",\n      \"content\": \"«pegar aquí el mensaje que devolvió /bienvenida»\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"7\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "El usuario puede escribir el número de la opción.\n\nIMPORTANTE: solo cuenta como opción si el menú es lo último que vio, por eso va en el historial. Reemplaza el texto del assistant por el `mensaje` real que devuelve /bienvenida, o el número irá al modelo."
+          }
+        },
+        {
+          "name": "Loterías de hoy (dato en vivo, sin modelo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"loterías de hoy\"\n    }\n  ],\n  \"action\": \"loterias_hoy\",\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Consulta el backend de ventas. El estado de cada lotería (abierta/cerrada y minutos restantes) se calcula en código."
+          }
+        },
+        {
+          "name": "Acumulados vigentes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"acumulados\"\n    }\n  ],\n  \"action\": \"acumulados\",\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Baloto, Revancha, Chance Millonario y Doble Play."
+          }
+        },
+        {
+          "name": "Volver al menú escribiendo «menu»",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"menu\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "También funciona con «opciones», «volver», «inicio» o un saludo.\n\nJunto al texto llega el evento `opciones` con los botones, para que el front no tenga que acordarse de repintarlos."
+          }
+        }
+      ],
+      "description": "Ninguna de estas invoca al modelo: no traen evento `usage`."
+    },
+    {
+      "name": "3 · Co-piloto de compra",
+      "item": [
+        {
+          "name": "Paso 1 — El usuario pulsa «¿Necesitas ayuda?» en Chance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"necesito ayuda\"\n    }\n  ],\n  \"action\": \"ayuda_compra\",\n  \"contexto\": {\n    \"modulo\": \"chance\"\n  },\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Arranca el guion del producto. Gratis, sale del código.\n\n`messages` puede traer cualquier placeholder: lo exige el esquema pero no se usa cuando viene `action`."
+          }
+        },
+        {
+          "name": "Paso 2 — El usuario sigue la conversación",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"necesito ayuda\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"content\": \"¡Hola! Nuestro asistente virtual te guiará paso a paso para hacer tu apuesta de Chance.\\n\\nAntes de comprar, hay 4 cosas que decidir:…\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"explicame las diferencias\"\n    }\n  ],\n  \"contexto\": {\n    \"modulo\": \"chance\"\n  },\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Ya sin `action`: es texto libre, responde el modelo.\n\nSe sigue mandando `contexto` para que entienda que «esto» es Chance sin que el usuario lo repita."
+          }
+        },
+        {
+          "name": "Otro producto — Baloto",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"necesito ayuda\"\n    }\n  ],\n  \"action\": \"ayuda_compra\",\n  \"contexto\": {\n    \"modulo\": \"baloto\"\n  },\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Hay guion para los 9 productos: chance, astro, baloto, miloto, loteria, chance_millonario, recargas, paquetes y recaudos."
+          }
+        },
+        {
+          "name": "Módulo sin guion — no falla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"necesito ayuda\"\n    }\n  ],\n  \"action\": \"ayuda_compra\",\n  \"contexto\": {\n    \"modulo\": \"inventado\"\n  },\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Un módulo desconocido devuelve un saludo genérico en vez de error."
+          }
+        },
+        {
+          "name": "El usuario lo escribe, sin pulsar botón",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"quiero jugar baloto\"\n    }\n  ],\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "El router detecta la intención solo y responde el mismo guion gratis. No hace falta que el front mande `action`."
+          }
+        }
+      ],
+      "description": "Ver la sección 7 del contrato para el flujo completo."
+    },
+    {
+      "name": "4 · Preguntas libres (usan el modelo)",
+      "item": [
+        {
+          "name": "Pregunta de conocimiento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"¿cuánto paga un directo de 3 cifras?\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Responde con la base de conocimiento. Trae evento `usage` con el costo estimado."
+          }
+        },
+        {
+          "name": "Pregunta que consulta un dato en vivo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"cuál fue el resultado del chontico?\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Dispara la herramienta de resultados.\n\nAquí se ven los eventos `descartar` y `progreso`: el modelo empieza a escribir, se descarta, se muestra «Buscando el resultado…» y luego llega la respuesta real."
+          }
+        },
+        {
+          "name": "Pregunta que enruta a otra pantalla",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"cómo radico una pqr?\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Junto a la respuesta llega `navegacion` con el módulo `pqrs`, para que el front ofrezca el atajo."
+          }
+        },
+        {
+          "name": "Pregunta fuera de tema",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"cuál es la capital de Francia?\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Debe responder con amabilidad que solo ayuda con temas de Facilísimo."
+          }
+        }
+      ],
+      "description": "Estas sí traen evento `usage`: costaron tokens."
+    },
+    {
+      "name": "5 · Estado de sesión",
+      "item": [
+        {
+          "name": "«Ver mi saldo» CON sesión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"ver mi saldo\"\n    }\n  ],\n  \"action\": \"ver_saldo\",\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Enruta al módulo `saldo`."
+          }
+        },
+        {
+          "name": "Pedir el saldo SIN sesión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"cuánto saldo tengo?\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "El mismo pedido sin sesión enruta a `ingreso`, no a `saldo`: iniciar sesión es el paso que realmente le falta.\n\nEl asistente NUNCA consulta el saldo real: no recibe el token de sesión. Solo lleva al usuario a la pantalla."
+          }
+        },
+        {
+          "name": "Mis compras CON sesión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"mis compras\"\n    }\n  ],\n  \"action\": \"mis_compras\",\n  \"autenticado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Enruta al módulo `historial`."
+          }
+        }
+      ],
+      "description": "`autenticado` cambia qué opciones se ofrecen y a dónde se enruta."
+    },
+    {
+      "name": "6 · Casos límite",
+      "item": [
+        {
+          "name": "Conversación demasiado larga",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 0\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 1\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 2\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 3\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 4\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 5\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 6\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 7\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 8\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 9\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 10\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 11\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 12\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 13\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 14\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 15\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 16\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 17\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 18\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 19\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 20\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 21\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 22\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 23\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 24\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 25\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 26\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 27\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 28\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 29\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"mensaje 30\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Hay un tope de 30 mensajes por conversación, para frenar el uso como chat personal. Debe responder pidiendo empezar una nueva."
+          }
+        },
+        {
+          "name": "Mensaje vacío",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"\"\n    }\n  ],\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "No debe romper."
+          }
+        },
+        {
+          "name": "Acción inexistente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"hola\"\n    }\n  ],\n  \"action\": \"no_existe\",\n  \"autenticado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "chat"
+              ]
+            },
+            "description": "Una acción desconocida no rompe: cae al modelo."
+          }
+        }
+      ],
+      "description": "Para verificar que el servicio no se rompe con entradas raras."
+    }
+  ]
+}
