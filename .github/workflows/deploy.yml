@@ -1,0 +1,102 @@
+name: Desplegar en AWS
+
+# Cada push a main construye la imagen y actualiza el servicio.
+# `workflow_dispatch` permite además lanzarlo a mano desde la pestaña Actions,
+# útil para redesplegar sin tener que hacer un commit vacío.
+on:
+  push:
+    branches: [main]
+    # Los .md de la raíz son documentación y no viajan en la imagen (están en
+    # .dockerignore), así que no justifican un despliegue.
+    # OJO: esto NO excluye app/knowledge/*.md — esos SÍ van dentro de la imagen
+    # y un cambio ahí debe desplegarse.
+    paths-ignore:
+      - '*.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: facilisimo/asistente-ia
+  ECS_SERVICE: asistente-ia
+  ECS_CLUSTER: default
+
+# Sin llaves de AWS guardadas en GitHub: se usa OIDC, que entrega credenciales
+# temporales por ejecución. `id-token: write` es lo que habilita ese mecanismo.
+permissions:
+  id-token: write
+  contents: read
+
+# Si se empujan dos commits seguidos, no tiene sentido desplegar el primero:
+# se cancela y se despliega el último.
+concurrency:
+  group: despliegue-produccion
+  cancel-in-progress: true
+
+jobs:
+  desplegar:
+    name: Construir y desplegar
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Traer el código
+        uses: actions/checkout@v4
+
+      - name: Autenticarse en AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::440744233233:role/github-actions-asistente-ia
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login en ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Construir y subir la imagen
+        id: imagen
+        env:
+          REGISTRO: ${{ steps.ecr.outputs.registry }}
+        run: |
+          # Se etiqueta con el SHA del commit, no solo con "latest": así cada
+          # despliegue apunta a una imagen distinta y se puede volver a una
+          # anterior si algo sale mal.
+          IMAGEN="$REGISTRO/$ECR_REPOSITORY:${{ github.sha }}"
+          docker build -t "$IMAGEN" -t "$REGISTRO/$ECR_REPOSITORY:latest" .
+          docker push "$IMAGEN"
+          docker push "$REGISTRO/$ECR_REPOSITORY:latest"
+          echo "uri=$IMAGEN" >> "$GITHUB_OUTPUT"
+
+      - name: Desplegar en ECS Express Mode
+        uses: aws-actions/amazon-ecs-deploy-express-service@v1
+        with:
+          service-name: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          image: ${{ steps.imagen.outputs.uri }}
+          execution-role-arn: arn:aws:iam::440744233233:role/ecsTaskExecutionRole
+          infrastructure-role-arn: arn:aws:iam::440744233233:role/ecsInfrastructureRoleForExpressServices
+          # Sin este task role el servicio arranca pero no puede llamar a
+          # Bedrock: la primera consulta falla con 403.
+          task-role-arn: arn:aws:iam::440744233233:role/asistente-ia-instance-role
+          container-port: '8000'
+          health-check-path: /health
+          cpu: '512'
+          memory: '1024'
+          min-task-count: '1'
+          # Tope bajo a propósito: los cachés (embeddings, loterías, acumulados,
+          # resultados) son por tarea. Cada tarea nueva arranca fría.
+          max-task-count: '3'
+          environment-variables: '{"AWS_REGION":"us-east-1"}'
+
+      - name: Verificar que responde
+        run: |
+          URL="https://as-eb4b47ff567b437e9e2508de6254bf9f.ecs.us-east-1.on.aws"
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 10 "$URL/health" > /dev/null; then
+              echo "El servicio responde correctamente."
+              exit 0
+            fi
+            echo "Intento $i: todavía no responde, reintentando en 15s..."
+            sleep 15
+          done
+          echo "El servicio no respondió tras el despliegue."
+          exit 1
