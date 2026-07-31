@@ -331,6 +331,39 @@ ahí manda tráfico: **el despliegue no corta el servicio**.
 
 ---
 
+## 6bis. Dominio propio — decisión tomada: por ahora NO
+
+Hoy el servicio responde en la URL que genera AWS, que ya trae HTTPS y
+certificado válido:
+
+```
+https://as-eb4b47ff567b437e9e2508de6254bf9f.ecs.us-east-1.on.aws
+```
+
+**Se decidió no registrar un dominio propio todavía.** El razonamiento: el
+asistente lo consume el front por HTTP desde JavaScript, así que **el usuario
+final nunca ve esa URL**. Un dominio nuevo sería una compra anual recurrente
+por algo que no cambia nada funcionalmente.
+
+Cuando exista un subdominio de Facilísimo (por ejemplo `asistente.facilisimo.co`),
+se conecta así:
+
+1. **Certificado en ACM**, en `us-east-1`, para ese subdominio. Validación por
+   DNS (se valida sola si el dominio está en Route 53).
+2. **Agregar el certificado** al listener HTTPS del ALB que creó Express Mode,
+   como certificado adicional.
+3. **⚠️ Agregar una regla al listener** que acepte ese `Host`, apuntando al
+   target group del servicio. **Este es el paso que se olvida:** Express Mode
+   enruta por *host-header*, así que con solo apuntar el DNS el balanceador
+   responde 404 — el dominio nuevo no coincide con ninguna regla existente.
+4. **Registro DNS**: un Alias tipo A al ALB si el dominio está en Route 53, o
+   un CNAME al DNS del balanceador si está en otro proveedor.
+5. Avisarle al front para que cambie la variable con la URL base.
+
+> Express Mode puede reescribir la configuración del listener al actualizar el
+> servicio. Conviene verificar que la regla del dominio siga ahí después del
+> primer despliegue posterior.
+
 ## 7. Después de que funcione
 
 - **Dominio propio:** App Runner → tu servicio → *Custom domains*. Pide el

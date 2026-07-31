@@ -7,6 +7,20 @@ aquí, no hace falta saberlo para consumir el servicio.
 
 ---
 
+## Dónde está el servicio
+
+```
+https://as-eb4b47ff567b437e9e2508de6254bf9f.ecs.us-east-1.on.aws
+```
+
+Ya viene con HTTPS y certificado válido. Todos los endpoints de este documento
+cuelgan de esa base.
+
+> ⚠️ **Ponlo en una variable de configuración, no incrustado en el código.**
+> Es la URL que genera AWS, y cambiaría si el servicio se recrea. Más adelante
+> se le va a poner un dominio propio (ver `DESPLIEGUE_AWS.md`), y cuando eso
+> pase solo debería cambiar esa variable.
+
 ## En 30 segundos
 
 - Son **tres endpoints**: `GET /health`, `GET /bienvenida` y `POST /chat`.

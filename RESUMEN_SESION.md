@@ -337,6 +337,24 @@ apaga, porque con recarga automática se reiniciaría en cada archivo guardado.
    historial, y mapear los siete módulos de navegación a sus rutas. Los tres
    requisitos están en `CONTRATO_FRONT.md`.
 
+### Estado del despliegue
+
+Corriendo en **ECS Express Mode** (Fargate + ALB, HTTPS automático), en la VPC
+por defecto — **la VPC de Facilísimo no se tocó**. La URL está en
+`CONTRATO_FRONT.md`. La guía completa, con los errores que costaron encontrar,
+en `DESPLIEGUE_AWS.md`.
+
+Pendientes chicos:
+
+- **Despliegue automático**: el workflow de GitHub Actions está listo y los
+  roles de AWS creados, pero la cuenta de GitHub está **bloqueada por
+  facturación** y el job no llega a arrancar. Al destrabarlo, basta con
+  *Re-run all jobs*; no hace falta volver a hacer push.
+- **`CORS_ORIGINS`** sigue en `*`. Restringirlo al dominio del front antes de
+  salir a producción (se cambia como variable de entorno y se redespliega).
+- **Dominio propio**: decidido no hacerlo por ahora (ver `DESPLIEGUE_AWS.md`
+  § 6bis). Se usa la URL de AWS, que ya trae HTTPS.
+
 ### Decisiones de alcance ya tomadas (no reabrir sin pedirlo)
 
 - **Sin herramientas con JWT.** El asistente **no consulta datos privados**
