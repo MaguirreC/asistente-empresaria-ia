@@ -147,8 +147,9 @@ larga, pero en producción va encendido.
    `_dia_semana()` en código con `datetime.weekday()`.
 3. **Mensaje duplicado** → el modelo a veces escribe la respuesta completa
    ANTES de llamar a una herramienta, y la repite después de confirmarla.
-   Arreglo: el texto de cualquier vuelta que termine en `tool_use` se
-   descarta, solo se muestra la vuelta final.
+   Primer arreglo: bufferear cada vuelta y mostrar solo la final. Funcionaba,
+   pero **mató el streaming** (ver bug #12); hoy se resuelve emitiendo el texto
+   en vivo y avisando con un evento `descartar` cuando la vuelta era intermedia.
 4. **`"*.md"` no se expandía en `--reload-include` en PowerShell** (ni con
    `uvicorn` ni con `python -m uvicorn`) → se creó `run_dev.py`.
 5. **Retrieval semántico eligió documentos equivocados** para "cuánto paga la
@@ -188,6 +189,25 @@ larga, pero en producción va encendido.
     reconocía) devolvía un menú propio, con opciones que **no existen** — entre
     ellas "retiros", que la plataforma no ofrece. Arreglo: el router reconoce
     los pedidos de menú, y el system prompt prohíbe inventar menús.
+12. **La respuesta no se transmitía en vivo: llegaba entera al final.** El
+    arreglo del bug #3 hacía `"".join(stream.text_stream)`, que consume el
+    stream completo antes de emitir nada. Medido en producción: **15–20
+    segundos de pantalla en blanco** y después todo de golpe. El docstring
+    incluso afirmaba que las respuestas sin herramienta "conservan el
+    streaming", y no era cierto. Arreglo: emitir cada fragmento apenas llega
+    y, si la vuelta resulta ser de herramienta, mandar `descartar` +
+    `progreso`. Verificado: pasó de 1 evento a **600 repartidos en 14,7 s**.
+    Lección: al arreglar un bug, medir lo que el arreglo se lleva puesto.
+
+13. **`bedrock-mantle` es un espacio de nombres de IAM distinto de `bedrock`.**
+    El SDK `AnthropicBedrockMantle` no llama a `bedrock:InvokeModel` sino a
+    `bedrock-mantle:CreateInference` sobre
+    `arn:aws:bedrock-mantle:<region>:<cuenta>:project/default`. Con un rol de
+    permisos mínimos da 403 aunque la política tenga `bedrock:*` completo. En
+    local no se nota, porque las credenciales de usuario suelen ser amplias.
+    Titan (embeddings) sí usa `bedrock:InvokeModel` normal, así que hacen falta
+    **los dos** permisos.
+
 11. **Confundió "medios de pago" con "productos".** De "los medios de pago no
     se combinan" dedujo que no se podían comprar dos productos en una misma
     transacción, y mandaba al usuario a hacer dos compras. Arreglo: se explicitó

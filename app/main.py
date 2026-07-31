@@ -193,7 +193,9 @@ def chat(request: ChatRequest):
     """Conversación con el asistente, en streaming (SSE).
 
     El front recibe eventos `data: {...}`:
-      {"delta": "texto"}          -> fragmento de la respuesta
+      {"delta": "texto"}          -> fragmento de la respuesta, apenas se genera
+      {"descartar": true}         -> borrar los deltas recibidos: no eran la respuesta final
+      {"progreso": "texto"}       -> se está consultando un dato en vivo; mostrarlo como estado
       {"usage": {"costo_usd"}}    -> costo ESTIMADO de esta respuesta (solo si usó el modelo)
       {"opciones": [...]}         -> botones del menú, cuando la respuesta ES el menú
       {"sugerencia_accion": {...}}-> el front puede ofrecer un botón de ayuda guiada
@@ -257,6 +259,10 @@ def chat(request: ChatRequest):
             for evento in stream_chat(_para_el_modelo(request.messages), modulo):
                 if evento.tipo == "texto":
                     yield f"data: {json.dumps({'delta': evento.valor}, ensure_ascii=False)}\n\n"
+                elif evento.tipo == "descartar":
+                    yield f"data: {json.dumps({'descartar': True})}\n\n"
+                elif evento.tipo == "herramienta":
+                    yield f"data: {json.dumps({'progreso': evento.valor}, ensure_ascii=False)}\n\n"
                 elif evento.tipo == "costo":
                     yield f"data: {json.dumps({'usage': {'costo_usd': evento.valor}})}\n\n"
             yield from _navegacion(destino)

@@ -58,6 +58,13 @@
   .assistant .burbuja strong { color: var(--acento); }
   .error .burbuja { background: #3a1d1d; border-color: #6b2b2b; color: #ffbdbd; }
 
+  /* Estado mientras se consulta una herramienta. */
+  .progreso { color: var(--tenue); font-style: italic; }
+  .progreso::after {
+    content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 6px;
+    background: var(--acento); border-radius: 50%; animation: latir 1s infinite;
+  }
+
   .vacio { color: var(--tenue); text-align: center; margin-top: 12vh; font-size: 14px; }
   .vacio code {
     display: block; margin-top: 14px; color: var(--texto);
@@ -384,6 +391,18 @@ async function mandar(textoBoton = null, accion = null, contextoForzado = null) 
         if (evento.delta) {
           acumulado += evento.delta;
           pintar(caja, acumulado);
+          chat.scrollTop = chat.scrollHeight;
+        } else if (evento.descartar) {
+          // Ese texto no era la respuesta final: el modelo lo escribió antes de
+          // confirmar el dato con una herramienta. Se borra.
+          acumulado = '';
+          caja.textContent = '';
+        } else if (evento.progreso) {
+          caja.textContent = '';
+          const estado = document.createElement('span');
+          estado.className = 'progreso';
+          estado.textContent = evento.progreso;
+          caja.appendChild(estado);
           chat.scrollTop = chat.scrollHeight;
         } else if (evento.usage) {
           sumarGasto(evento.usage.costo_usd);

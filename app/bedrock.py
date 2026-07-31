@@ -15,7 +15,7 @@ from app.embeddings import documentos_relevantes
 from app.pricing import calcular_costo_usd
 from app.prompts.system import SYSTEM_PROMPT
 from app.schemas import Message
-from app.tools import TOOL_DEFINITIONS, execute_tool
+from app.tools import TOOL_DEFINITIONS, etiqueta_progreso, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,17 @@ class BedrockError(RuntimeError):
 
 
 class ChatEvent(NamedTuple):
-    """Lo que produce stream_chat: fragmentos de texto y, al final, el costo."""
-    tipo: Literal["texto", "costo"]
-    valor: str | float
+    """Lo que produce stream_chat.
+
+    - `texto`      -> un fragmento de la respuesta, apenas lo emite el modelo.
+    - `descartar`  -> lo emitido hasta ahora no era la respuesta final; hay que
+                      borrarlo (ver `stream_chat` para el porqué).
+    - `herramienta`-> se está consultando un dato en vivo; el valor es una
+                      frase lista para mostrarle al usuario.
+    - `costo`      -> costo estimado de toda la respuesta. Llega al final.
+    """
+    tipo: Literal["texto", "descartar", "herramienta", "costo"]
+    valor: str | float | None
 
 
 @lru_cache(maxsize=1)
@@ -143,16 +151,19 @@ def _texto_para_retrieval(messages: List[Message], modulo: str | None) -> str:
 def stream_chat(messages: List[Message], modulo: str | None = None) -> Iterator[ChatEvent]:
     """Responde al usuario, consultando herramientas si el modelo las pide.
 
-    El texto de una vuelta que termina llamando a una herramienta NUNCA se le
-    muestra al usuario: el modelo a veces escribe ahí su respuesta antes de
-    confirmar el dato con la herramienta, y luego la repite ya confirmada. Se
-    bufferea cada vuelta y solo se entrega la de la respuesta final (la que ya
-    tiene el dato real), evitando ese doble mensaje.
+    El texto se emite **apenas lo produce el modelo**, para que el usuario vea
+    la respuesta escribiéndose en vez de esperar en blanco. Medido: una
+    respuesta larga tarda ~17 s en completarse; entregarla entera al final
+    hacía parecer que el servicio estaba colgado.
 
-    A cambio se pierde el efecto de "escribiendo en vivo" en las preguntas que
-    usan herramientas: el texto aparece completo en cuanto está listo, no
-    letra por letra. Las respuestas que no necesitan herramientas (la mayoría)
-    conservan el streaming en vivo, porque son una sola vuelta.
+    El problema que eso reabre: el modelo a veces escribe una respuesta y
+    RECIÉN DESPUÉS llama a una herramienta para confirmar el dato, y luego la
+    repite ya confirmada (el "mensaje duplicado"). Como no se puede saber de
+    antemano si una vuelta va a terminar en herramienta, se emite el texto y,
+    si resulta que era una vuelta intermedia, se avisa con un evento
+    `descartar` para que el front borre lo que mostró. Enseguida va un evento
+    `herramienta` con qué se está consultando, así el usuario ve progreso en
+    lugar de un parpadeo.
 
     Al final entrega un evento "costo" con lo que costó TODA la respuesta,
     sumando las llamadas al modelo que hicieron falta (una consulta con
@@ -174,7 +185,12 @@ def stream_chat(messages: List[Message], modulo: str | None = None) -> Iterator[
                 tools=TOOL_DEFINITIONS,
                 messages=conversacion,
             ) as stream:
-                texto_de_la_vuelta = "".join(stream.text_stream)
+                # Se emite sobre la marcha, no se acumula: es lo que hace que
+                # el usuario vea la respuesta escribiéndose.
+                emitio_texto = False
+                for fragmento in stream.text_stream:
+                    emitio_texto = True
+                    yield ChatEvent("texto", fragmento)
                 respuesta = stream.get_final_message()
 
             uso = respuesta.usage
@@ -197,22 +213,32 @@ def stream_chat(messages: List[Message], modulo: str | None = None) -> Iterator[
             )
 
             if respuesta.stop_reason != "tool_use":
-                # Esta es la respuesta final: la única que se le muestra al usuario.
-                yield ChatEvent("texto", texto_de_la_vuelta)
+                # Era la respuesta final: ya se emitió entera mientras llegaba.
                 yield ChatEvent("costo", costo_acumulado)
                 return
 
-            # Vuelta intermedia: se descarta su texto (si escribió algo) y se
-            # ejecutan las herramientas que pidió.
+            # Vuelta intermedia. Si el modelo alcanzó a escribir algo, ese texto
+            # NO es la respuesta buena (todavía no tiene el dato real), así que
+            # se le pide al front que lo borre antes de seguir.
+            if emitio_texto:
+                yield ChatEvent("descartar", None)
+
             conversacion.append({"role": "assistant", "content": respuesta.content})
+            pedidos = [b for b in respuesta.content if b.type == "tool_use"]
+
+            # Se avisa qué se está consultando: es la espera más larga de todas
+            # (implica una segunda llamada al modelo) y conviene que el usuario
+            # vea que algo está pasando.
+            if pedidos:
+                yield ChatEvent("herramienta", etiqueta_progreso(pedidos[0].name))
+
             resultados = [
                 {
                     "type": "tool_result",
                     "tool_use_id": bloque.id,
                     "content": execute_tool(bloque.name, bloque.input or {}),
                 }
-                for bloque in respuesta.content
-                if bloque.type == "tool_use"
+                for bloque in pedidos
             ]
             conversacion.append({"role": "user", "content": resultados})
 

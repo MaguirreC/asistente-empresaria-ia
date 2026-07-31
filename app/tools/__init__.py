@@ -82,6 +82,20 @@ _HANDLERS = {
     "resultados_loteria": resultados_loteria,
 }
 
+# Qué mostrarle al usuario mientras se consulta el dato. Consultar una
+# herramienta implica una segunda llamada al modelo, así que son los segundos
+# de espera más largos: conviene que vea que algo está pasando.
+_ETIQUETAS_PROGRESO = {
+    "loterias_del_dia": "Consultando las loterías de hoy…",
+    "acumulados_actuales": "Consultando los acumulados…",
+    "resultados_loteria": "Buscando el resultado del sorteo…",
+}
+
+
+def etiqueta_progreso(name: str) -> str:
+    """Frase para mostrar mientras corre esa herramienta."""
+    return _ETIQUETAS_PROGRESO.get(name, "Consultando la información…")
+
 
 def execute_tool(name: str, tool_input: dict) -> str:
     """Ejecuta una herramienta y devuelve su resultado como texto.

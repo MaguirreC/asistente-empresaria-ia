@@ -192,6 +192,8 @@ línea en blanco.
 | Evento | Significado |
 |---|---|
 | `{"delta": "texto"}` | Fragmento de la respuesta. Concatenar en orden. |
+| `{"descartar": true}` | **Borrar todo lo acumulado**: no era la respuesta final. Ver abajo. |
+| `{"progreso": "texto"}` | Se está consultando un dato en vivo. Mostrarlo como estado. |
 | `{"opciones": [...]}` | Botones del menú. Llega cuando la respuesta **es** el menú. |
 | `{"navegacion": {...}}` | Llevar al usuario a otra pantalla. Ver sección 5. |
 | `{"sugerencia_accion": {...}}` | Ofrecer el botón de ayuda guiada. Ver sección 7. |
@@ -227,6 +229,8 @@ while (true) {
     const evt = JSON.parse(linea.slice(6));
 
     if (evt.delta)             { respuesta += evt.delta; pintar(respuesta); }
+    if (evt.descartar)         { respuesta = ""; pintar(""); }
+    if (evt.progreso)          mostrarEstado(evt.progreso);
     if (evt.opciones)          pintarBotonesMenu(evt.opciones);
     if (evt.navegacion)        pintarBotonIrA(evt.navegacion);
     if (evt.sugerencia_accion) pintarBotonAyuda(evt.sugerencia_accion);
@@ -241,6 +245,38 @@ if (respuesta.trim()) mensajes.push({ role: "assistant", content: respuesta });
 
 El texto puede traer **negritas de Markdown** (`**así**`). Conviene
 convertirlas, escapando el resto para evitar inyección de HTML.
+
+### `descartar` y `progreso`: por qué existen
+
+La respuesta llega **escribiéndose en vivo**, palabra por palabra. Pero cuando
+el asistente necesita un dato en vivo (loterías de hoy, acumulados,
+resultados), el modelo **a veces empieza a escribir una respuesta y recién
+después decide consultar la herramienta** — y esa primera versión todavía no
+tiene el dato real.
+
+Como no se puede saber de antemano si eso va a pasar, la secuencia real es:
+
+```
+data: {"delta": "El Dorado cierra a las…"}     ← respuesta prematura
+data: {"descartar": true}                       ← no servía, borrala
+data: {"progreso": "Consultando las loterías de hoy…"}
+data: {"delta": "Sí, alcanzas: El Dorado…"}    ← la buena, ya con el dato
+data: {"done": true}
+```
+
+**Qué debe hacer el front:**
+
+- Con `descartar`: vaciar el texto acumulado y lo que esté mostrando.
+- Con `progreso`: reemplazar el contenido por ese texto, como estado (en gris,
+  en cursiva, con un indicador de actividad). Los `delta` que lleguen después
+  lo reemplazan.
+
+La alternativa era esperar a tener la respuesta completa antes de mostrar
+nada, y **se midió: eran 15–20 segundos de pantalla en blanco**. En un chat de
+atención al cliente, eso parece que se colgó.
+
+> La mayoría de las respuestas **no** pasan por esto: van directo en `delta` de
+> principio a fin. Solo ocurre en las que consultan datos en vivo.
 
 ---
 
@@ -428,8 +464,8 @@ sugerencia.
       con el chat abierto.
 - [ ] Mandar el historial completo en cada `POST /chat`, e ir agregando cada
       respuesta del asistente.
-- [ ] Manejar los eventos `delta`, `opciones`, `navegacion`,
-      `sugerencia_accion`, `error` y `done`.
+- [ ] Manejar los eventos `delta`, `descartar`, `progreso`, `opciones`,
+      `navegacion`, `sugerencia_accion`, `error` y `done`.
 - [ ] Mapear los **siete módulos de navegación** a las rutas reales de la web.
 - [ ] Mandar `contexto.modulo` mientras el usuario esté dentro de un producto.
 - [ ] Convertir las negritas de Markdown, escapando el resto del HTML.

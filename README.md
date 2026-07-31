@@ -8,7 +8,8 @@ Independiente del backend Spring: se despliega en AWS y el front lo consume.
 
 | Documento | Para quién |
 |---|---|
-| Este `README.md` | quien **opera** el servicio: correr, configurar, desplegar |
+| Este `README.md` | quien **opera** el servicio: correr y configurar |
+| [`DESPLIEGUE_AWS.md`](DESPLIEGUE_AWS.md) | guía paso a paso para desplegar en AWS |
 | [`CONTRATO_FRONT.md`](CONTRATO_FRONT.md) | quien lo **consume**: el dev de front |
 | [`RESUMEN_SESION.md`](RESUMEN_SESION.md) | arquitectura, decisiones tomadas y bugs ya resueltos |
 | [`INVENTARIO_PREGUNTAS.md`](INVENTARIO_PREGUNTAS.md) | qué preguntas cubre la base de conocimiento |
@@ -177,12 +178,27 @@ contra Bedrock, porque Titan Embeddings no habla la API de Anthropic.
 
 ## Despliegue
 
-Va en **ECS Fargate detrás de un ALB**, con **HTTPS + SSE** (no WebSocket) y el
-rol IAM de la task para Bedrock. **No usar Lambda + API Gateway:** bufferiza la
-respuesta y rompe el streaming.
+👉 **Guía paso a paso: [`DESPLIEGUE_AWS.md`](DESPLIEGUE_AWS.md)**
 
-La guía completa, con los ajustes de timeout, región, workers y autoescalado,
-está en [`RESUMEN_SESION.md`](RESUMEN_SESION.md), sección **Despliegue (Fase 6)**.
+Va en **AWS App Runner**, que resuelve solo el HTTPS, el certificado, el
+dominio y el escalado. **No usa VPC**, así que no toca la red existente — y el
+servicio no la necesita: todo lo que consume (Bedrock, el backend de ventas y
+`resultados.facilisimo.co`) es público.
+
+**No usar Lambda + API Gateway:** bufferiza la respuesta y rompe el streaming.
+
+Los tres puntos que más se pasan por alto, marcados con ⚠️ en la guía:
+
+1. **Health check en HTTP `/health` con umbral alto** — el default es TCP, y al
+   arrancar la app tarda unos segundos precalculando embeddings antes de
+   aceptar conexiones.
+2. **Puerto 8000** — App Runner propone 8080 por defecto.
+3. **Dos roles IAM distintos**: el *access role* baja la imagen de ECR; el
+   *instance role* es el que da permiso sobre Bedrock.
+
+Y una verificación que decide todo: que el **streaming SSE llegue por partes**
+y no de golpe (paso 5.3). Si se bufferiza, el plan B es ECS + ALB en una VPC
+nueva y dedicada.
 
 ---
 
