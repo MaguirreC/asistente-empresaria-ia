@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente Virtual — banco de pruebas</title>
+<style>
+  :root {
+    --fondo: #0f1115;
+    --panel: #171a21;
+    --borde: #262b36;
+    --texto: #e6e8ec;
+    --tenue: #8b93a7;
+    --acento: #f5a524;
+    --usuario: #2b3242;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    background: var(--fondo); color: var(--texto);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid var(--borde);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .etiqueta {
+    font-size: 12px; color: var(--tenue); border: 1px solid var(--borde);
+    padding: 2px 8px; border-radius: 99px;
+  }
+  #limpiar {
+    background: none; border: 1px solid var(--borde);
+    color: var(--tenue); padding: 5px 12px; border-radius: 7px;
+    cursor: pointer; font-size: 13px;
+  }
+  #limpiar:hover { color: var(--texto); border-color: var(--tenue); }
+  #gasto {
+    margin-left: auto; font-size: 12px; color: var(--tenue);
+    display: flex; align-items: center; gap: 6px;
+  }
+  #gasto b { color: #6ee7a8; font-variant-numeric: tabular-nums; }
+  #gasto small { color: var(--tenue); }
+
+  #chat { flex: 1; overflow-y: auto; padding: 22px; }
+  .envoltura { max-width: 760px; margin: 0 auto; }
+  .msg { margin-bottom: 18px; display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .burbuja {
+    padding: 11px 15px; border-radius: 13px; max-width: 82%;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .user .burbuja { background: var(--usuario); border-bottom-right-radius: 4px; }
+  .assistant .burbuja {
+    background: var(--panel); border: 1px solid var(--borde);
+    border-bottom-left-radius: 4px;
+  }
+  .assistant .burbuja strong { color: var(--acento); }
+  .error .burbuja { background: #3a1d1d; border-color: #6b2b2b; color: #ffbdbd; }
+
+  .vacio { color: var(--tenue); text-align: center; margin-top: 12vh; font-size: 14px; }
+  .vacio code {
+    display: block; margin-top: 14px; color: var(--texto);
+    font-size: 13px; line-height: 2;
+  }
+
+  .puntos span {
+    display: inline-block; width: 6px; height: 6px; margin-right: 3px;
+    background: var(--tenue); border-radius: 50%; animation: latir 1.2s infinite;
+  }
+  .puntos span:nth-child(2) { animation-delay: .2s; }
+  .puntos span:nth-child(3) { animation-delay: .4s; }
+  @keyframes latir { 0%,60%,100% { opacity:.25 } 30% { opacity:1 } }
+
+  .sugerencia {
+    margin: -6px 0 18px 0; display: flex;
+  }
+  .sugerencia button {
+    background: transparent; border: 1px solid var(--acento); color: var(--acento);
+    padding: 7px 14px; border-radius: 99px; cursor: pointer; font-size: 13px;
+  }
+  .sugerencia button:hover { background: var(--acento); color: #1a1205; }
+
+  /* Botones numerados del menú de bienvenida. */
+  .menu-opciones {
+    margin: -6px 0 18px 0; display: flex; flex-wrap: wrap; gap: 7px; max-width: 82%;
+  }
+  .menu-opciones button {
+    background: var(--panel); border: 1px solid var(--borde); color: var(--texto);
+    padding: 7px 13px; border-radius: 99px; cursor: pointer; font-size: 13px;
+  }
+  .menu-opciones button:hover { border-color: var(--acento); color: var(--acento); }
+  .menu-opciones button b { color: var(--acento); margin-right: 5px; }
+
+  /* Señal de navegación: en el front real esto MUEVE al usuario de pantalla. */
+  .navegacion { margin: -6px 0 18px 0; display: flex; }
+  .navegacion button {
+    background: #1d2b1f; border: 1px solid #3f7a4a; color: #8ee5a1;
+    padding: 7px 14px; border-radius: 99px; cursor: pointer; font-size: 13px;
+  }
+  .navegacion button:hover { background: #263a29; }
+
+  footer { border-top: 1px solid var(--borde); padding: 14px 22px; }
+  .rapidos {
+    max-width: 760px; margin: 0 auto 10px; display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .rapidos button {
+    background: var(--panel); border: 1px solid var(--borde); color: var(--texto);
+    padding: 6px 13px; border-radius: 99px; cursor: pointer; font-size: 13px;
+  }
+  .rapidos button:hover { border-color: var(--acento); }
+  .rapidos button .gratis { color: #6ee7a8; font-size: 11px; margin-left: 5px; }
+  .simulador {
+    font-size: 12px; color: var(--tenue); display: flex; align-items: center; gap: 6px;
+  }
+  .simulador select {
+    background: var(--panel); color: var(--texto); border: 1px solid var(--borde);
+    border-radius: 6px; padding: 3px 6px; font-size: 12px;
+  }
+  .barra { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; }
+  #entrada {
+    flex: 1; resize: none; background: var(--panel); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 10px;
+    padding: 11px 14px; font: inherit; max-height: 160px;
+  }
+  #entrada:focus { outline: none; border-color: var(--acento); }
+  #enviar {
+    background: var(--acento); color: #1a1205; border: 0; border-radius: 10px;
+    padding: 0 22px; font-weight: 600; cursor: pointer;
+  }
+  #enviar:disabled { opacity: .4; cursor: default; }
+  .ayuda { max-width: 760px; margin: 8px auto 0; font-size: 12px; color: var(--tenue); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Asistente Virtual</h1>
+  <span class="etiqueta">banco de pruebas</span>
+  <span class="etiqueta" id="modelo">…</span>
+  <span id="gasto" title="Estimado con las tarifas públicas de Bedrock — no es la factura real de AWS">
+    💰 <b id="gasto-valor">$0.0000</b> <small>USD estimados</small>
+  </span>
+  <button id="limpiar">Limpiar</button>
+</header>
+
+<div id="chat">
+  <div class="envoltura" id="hilo">
+    <div class="vacio" id="vacio">
+      Escribe abajo para probar el asistente. Por ejemplo:
+      <code>
+        ¿alcanzo a jugar dorado mañana?<br>
+        ¿cuánto paga un directo de 3 cifras?<br>
+        ¿a dónde me llega la colilla?<br>
+        me declinaron una compra, ¿qué hago?
+      </code>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="rapidos">
+    <span class="simulador">
+      <label title="En la web real esto lo sabe el front por su propia sesión">
+        <input type="checkbox" id="autenticado"> 🔓 Sesión iniciada
+      </label>
+    </span>
+    <span class="simulador">
+      📍 Página simulada:
+      <select id="pagina">
+        <option value="">ninguna</option>
+        <option value="chance">Chance</option>
+        <option value="astro">Astro</option>
+        <option value="baloto">Baloto</option>
+        <option value="miloto">MiLoto</option>
+        <option value="loteria">Lotería (billetes)</option>
+        <option value="chance_millonario">Chance Millonario</option>
+        <option value="recargas">Recargas de celular</option>
+        <option value="paquetes">Paquetes</option>
+        <option value="recaudos">Recaudos</option>
+      </select>
+    </span>
+  </div>
+  <div class="rapidos">
+    <button data-accion="loterias_hoy">🎲 Loterías de hoy<span class="gratis">sin IA</span></button>
+    <button data-accion="acumulados">💵 Ver acumulados<span class="gratis">sin IA</span></button>
+    <button data-accion="menu">☰ Menú<span class="gratis">sin IA</span></button>
+    <button data-accion="ayuda_compra">🛒 Simular clic en "Necesito ayuda"<span class="gratis">sin IA</span></button>
+    <button data-texto="¿cuánto paga un directo de 3 cifras?">💰 Cuánto paga el chance</button>
+    <button data-texto="¿a dónde me llega la colilla?">📩 Mi colilla</button>
+    <button data-texto="me declinaron una compra, ¿qué hago?">⚠️ Compra declinada</button>
+  </div>
+  <div class="barra">
+    <textarea id="entrada" rows="1" placeholder="Escribe tu pregunta…"></textarea>
+    <button id="enviar">Enviar</button>
+  </div>
+  <div class="ayuda">Enter envía · Shift+Enter salta de línea</div>
+</footer>
+
+<script>
+const hilo    = document.getElementById('hilo');
+const chat    = document.getElementById('chat');
+const entrada = document.getElementById('entrada');
+const enviar  = document.getElementById('enviar');
+
+// Historial que se manda al backend en cada turno.
+let mensajes = [];
+let ocupado  = false;
+
+// Costo acumulado de la sesión. Solo suma lo que de verdad usó el modelo:
+// las respuestas resueltas por el router no traen evento "usage", así que
+// no aportan nada — eso es justamente lo que las hace gratis.
+let gastoTotal = 0;
+const gastoValor = document.getElementById('gasto-valor');
+
+function sumarGasto(usd) {
+  gastoTotal += usd;
+  gastoValor.textContent = '$' + gastoTotal.toFixed(4);
+}
+
+// Simula el módulo/página donde estaría el usuario en la web real. El front
+// real mandaría esto según la ruta en la que esté, no con un <select>.
+const paginaSelect = document.getElementById('pagina');
+function contextoActual() {
+  return paginaSelect.value ? { modulo: paginaSelect.value } : null;
+}
+
+// Simula si el usuario tiene la sesión iniciada. En la web real el front lo
+// sabe por su propia sesión; este servicio nunca recibe el token.
+const autenticadoCheck = document.getElementById('autenticado');
+// Sobrevive al recargar, si no probar con sesión iniciada sería imposible.
+autenticadoCheck.checked = sessionStorage.getItem('autenticado') === '1';
+function estaAutenticado() { return autenticadoCheck.checked; }
+
+// Al cambiar de estado, el menú es otro: se reinicia la conversación para no
+// mezclar dos menús distintos en el mismo historial.
+autenticadoCheck.onchange = () => {
+  sessionStorage.setItem('autenticado', autenticadoCheck.checked ? '1' : '0');
+  location.reload();
+};
+
+fetch('/health')
+  .then(r => r.json())
+  .then(d => document.getElementById('modelo').textContent = d.model)
+  .catch(() => document.getElementById('modelo').textContent = 'sin conexión');
+
+document.getElementById('limpiar').onclick = () => {
+  mensajes = [];
+  hilo.innerHTML = '';
+  location.reload();
+};
+
+function burbuja(rol, texto = '') {
+  document.getElementById('vacio')?.remove();
+  const fila = document.createElement('div');
+  fila.className = 'msg ' + rol;
+  const caja = document.createElement('div');
+  caja.className = 'burbuja';
+  caja.textContent = texto;
+  fila.appendChild(caja);
+  hilo.appendChild(fila);
+  chat.scrollTop = chat.scrollHeight;
+  return caja;
+}
+
+// Negritas de Markdown -> <strong>, escapando el resto para evitar inyección.
+function pintar(caja, texto) {
+  const seguro = texto
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  caja.innerHTML = seguro.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function botonSugerencia(sugerencia) {
+  const envoltura = document.createElement('div');
+  envoltura.className = 'sugerencia';
+  const boton = document.createElement('button');
+  boton.textContent = sugerencia.etiqueta;
+  boton.onclick = () => {
+    envoltura.remove();
+    mandar(sugerencia.etiqueta, sugerencia.accion, sugerencia.contexto);
+  };
+  envoltura.appendChild(boton);
+  hilo.appendChild(envoltura);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// Botones numerados del menú. El usuario puede pulsarlos o escribir el número:
+// las dos vías terminan en la misma acción del router.
+function botonesMenu(opciones) {
+  const envoltura = document.createElement('div');
+  envoltura.className = 'menu-opciones';
+  for (const op of opciones) {
+    const boton = document.createElement('button');
+    boton.innerHTML = '<b></b>';
+    boton.querySelector('b').textContent = op.numero;
+    boton.appendChild(document.createTextNode(op.etiqueta));
+    boton.onclick = () => mandar(op.etiqueta, op.accion);
+    envoltura.appendChild(boton);
+  }
+  hilo.appendChild(envoltura);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// El front REAL llevaría al usuario a la pantalla del módulo. Aquí solo se
+// simula, porque este banco de pruebas no tiene las rutas de la web.
+function botonNavegacion(destino) {
+  const envoltura = document.createElement('div');
+  envoltura.className = 'navegacion';
+  const boton = document.createElement('button');
+  boton.textContent = '➜ ' + destino.etiqueta;
+  boton.title = 'En la web real esto llevaría al módulo "' + destino.modulo + '"';
+  boton.onclick = () => {
+    burbuja('assistant', '[simulación] El front llevaría al usuario al módulo "'
+      + destino.modulo + '". Este banco de pruebas no tiene esa pantalla.');
+  };
+  envoltura.appendChild(boton);
+  hilo.appendChild(envoltura);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// Saludo y opciones al abrir el chat. Sale del código del backend, no del
+// modelo: no cuesta tokens y siempre dice exactamente lo mismo.
+function cargarBienvenida() {
+  fetch('/bienvenida?autenticado=' + estaAutenticado())
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('vacio')?.remove();
+      pintar(burbuja('assistant'), d.mensaje);
+      botonesMenu(d.opciones);
+      // Va al historial porque el usuario lo vio: así el backend sabe que un
+      // "3" es una opción del menú y no la respuesta a otra pregunta. El
+      // backend lo filtra antes de mandárselo al modelo.
+      mensajes.push({ role: 'assistant', content: d.mensaje });
+    })
+    .catch(() => { /* si falla, queda el texto de ayuda de siempre */ });
+}
+
+async function mandar(textoBoton = null, accion = null, contextoForzado = null) {
+  const texto = textoBoton || entrada.value.trim();
+  if (!texto || ocupado) return;
+
+  ocupado = true;
+  enviar.disabled = true;
+  if (!textoBoton) { entrada.value = ''; entrada.style.height = 'auto'; }
+
+  burbuja('user', texto);
+  mensajes.push({ role: 'user', content: texto });
+
+  const caja = burbuja('assistant');
+  caja.innerHTML = '<span class="puntos"><span></span><span></span><span></span></span>';
+
+  let acumulado = '';
+  try {
+    const r = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: mensajes,
+        action: accion,
+        contexto: contextoForzado || contextoActual(),
+        autenticado: estaAutenticado(),
+      }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+
+    const lector = r.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await lector.read();
+      if (done) break;
+      buffer += dec.decode(value, { stream: true });
+
+      // Los eventos SSE llegan separados por una línea en blanco.
+      const partes = buffer.split('\n\n');
+      buffer = partes.pop();
+
+      for (const parte of partes) {
+        const linea = parte.split('\n').find(l => l.startsWith('data: '));
+        if (!linea) continue;
+        const evento = JSON.parse(linea.slice(6));
+
+        if (evento.delta) {
+          acumulado += evento.delta;
+          pintar(caja, acumulado);
+          chat.scrollTop = chat.scrollHeight;
+        } else if (evento.usage) {
+          sumarGasto(evento.usage.costo_usd);
+        } else if (evento.opciones) {
+          botonesMenu(evento.opciones);
+        } else if (evento.sugerencia_accion) {
+          botonSugerencia(evento.sugerencia_accion);
+        } else if (evento.navegacion) {
+          botonNavegacion(evento.navegacion);
+        } else if (evento.error) {
+          caja.parentElement.className = 'msg error';
+          caja.textContent = evento.error;
+        }
+      }
+    }
+
+    if (acumulado.trim()) {
+      mensajes.push({ role: 'assistant', content: acumulado });
+    }
+  } catch (e) {
+    caja.parentElement.className = 'msg error';
+    caja.textContent = 'No se pudo contactar el servicio: ' + e.message;
+  } finally {
+    ocupado = false;
+    enviar.disabled = false;
+    entrada.focus();
+  }
+}
+
+enviar.onclick = () => mandar();
+
+// Los botones con data-accion se resuelven en el servidor sin invocar al modelo.
+document.querySelectorAll('.rapidos button').forEach(b => {
+  b.onclick = () => mandar(
+    b.dataset.texto || b.textContent.replace(/sin IA/, '').trim(),
+    b.dataset.accion || null,
+  );
+});
+entrada.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mandar(); }
+});
+entrada.addEventListener('input', () => {
+  entrada.style.height = 'auto';
+  entrada.style.height = Math.min(entrada.scrollHeight, 160) + 'px';
+});
+entrada.focus();
+cargarBienvenida();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+anthropic[bedrock]>=0.75.0
+# Cliente directo a Bedrock para Titan Embeddings (retrieval). anthropic[bedrock]
+# ya lo trae de forma transitiva, pero lo usamos directo así que va explícito.
+boto3>=1.35.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+httpx==0.28.1
+# Base de zonas horarias IANA: Windows no la trae y zoneinfo la necesita
+tzdata==2024.2
