@@ -40,6 +40,20 @@ class Settings(BaseSettings):
     # reinicia en cada archivo guardado y esperar en cada una es insufrible.
     precalentar_embeddings: bool = True
 
+    # --- Analítica -------------------------------------------------------
+    # Registro de qué preguntan los usuarios, para saber qué le falta a la
+    # base de conocimiento. Las preguntas se enmascaran antes de guardarse
+    # (ver app/analitica.py) y los registros expiran solos.
+    analitica_activa: bool = True
+    analitica_tabla: str = "asistente-ia-consultas"
+    analitica_dias_retencion: int = 90
+
+    # Clave que exige `/analitica/resumen`, que expone las preguntas de los
+    # usuarios y por eso NO puede quedar abierto. Sin valor configurado, el
+    # endpoint responde 503: es preferible que el panel no funcione a que los
+    # datos queden públicos por un descuido de configuración.
+    admin_api_key: str = ""
+
     # Tope de mensajes por conversación, para frenar el uso como chat personal.
     # Se puede apagar puntualmente con LIMITE_MENSAJES_ACTIVO=false en el .env
     # para depurar una conversación larga, pero en producción va encendido.

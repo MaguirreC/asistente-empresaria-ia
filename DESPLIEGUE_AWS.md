@@ -331,6 +331,82 @@ ahí manda tráfico: **el despliegue no corta el servicio**.
 
 ---
 
+## 5bis. Analítica: la tabla de DynamoDB
+
+Necesaria para el panel del admin. Sin ella el asistente **funciona igual**
+—registrar nunca rompe una respuesta—, solo que no guarda nada y el panel
+aparece vacío.
+
+### Crear la tabla
+
+**Consola → DynamoDB → Tables → Create table**
+
+| Campo | Valor |
+|---|---|
+| Table name | `asistente-ia-consultas` |
+| Partition key | `fecha` — tipo `String` |
+| Sort key | `id` — tipo `String` |
+| Table settings | `Customize settings` |
+| Capacity mode | **`On-demand`** |
+
+`On-demand` porque el tráfico es bajo e irregular: se paga por escritura real
+en vez de reservar capacidad que estaría ociosa.
+
+Particionar por **fecha** permite consultar un rango de días sin escanear la
+tabla entera, que es lo que hace el panel.
+
+### Activar el borrado automático
+
+Ya creada: pestaña **Additional settings → Time to Live (TTL) → Turn on**, con
+atributo **`ttl`**.
+
+Es lo que hace que los registros se borren solos a los 90 días. **No es
+opcional:** son preguntas de usuarios y no deben acumularse indefinidamente.
+
+### Darle permiso al asistente
+
+**IAM → `asistente-ia-instance-role` → Add permissions → Create inline policy → JSON**:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AnaliticaDeConsultas",
+      "Effect": "Allow",
+      "Action": ["dynamodb:PutItem", "dynamodb:Query"],
+      "Resource": "arn:aws:dynamodb:<REGION>:<CUENTA>:table/asistente-ia-consultas"
+    }
+  ]
+}
+```
+
+Nombre: `asistente-ia-analitica`. Solo escribir y consultar: **no puede borrar
+ni leer la tabla entera**.
+
+### Configurar la clave del panel
+
+El endpoint `/analitica/resumen` expone las preguntas de los usuarios, así que
+exige una clave. **Sin clave configurada responde 503 a propósito**: es
+preferible que el panel no funcione a que estos datos queden abiertos.
+
+Genera una cadena larga y aleatoria y ponla como variable de entorno del
+servicio (**ECS → Express Mode → Update → Additional configurations**):
+
+| Nombre | Valor |
+|---|---|
+| `ADMIN_API_KEY` | la cadena que generaste |
+
+La misma cadena va en `asistenteAdminKey` de los `environment.ts` del front
+administrativo.
+
+> ⚠️ **Deuda de seguridad, anotada a propósito.** Esa clave termina dentro del
+> bundle de JavaScript: cualquiera con acceso al panel puede leerla desde el
+> navegador y usarla directamente contra el endpoint. Lo que expone son
+> preguntas ya enmascaradas y contadores, así que el riesgo es acotado — pero
+> antes de producción el panel debería pedir estos datos a
+> `api-administrativo`, y la clave vivir solo en ese backend.
+
 ## 6bis. Dominio propio — decisión tomada: por ahora NO
 
 Hoy el servicio responde en la URL que genera AWS, que ya trae HTTPS y

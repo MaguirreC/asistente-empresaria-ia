@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import unicodedata
+from collections import deque
 from functools import lru_cache
 
 import boto3
@@ -163,8 +164,29 @@ def documentos_relevantes(texto_consulta: str, top_k: int = TOP_K) -> str:
     ]
     elegidos = sorted(puntuados, key=lambda t: t[0], reverse=True)[:top_k]
 
-    logger.info("Retrieval eligió: %s", [nombre for _, nombre, _ in elegidos])
+    nombres = [nombre for _, nombre, _ in elegidos]
+    logger.info("Retrieval eligió: %s", nombres)
+    _ultimos_elegidos.append(nombres)
     return "\n\n---\n\n".join(texto for _, _, texto in elegidos)
+
+
+# Los nombres de la última búsqueda, para poder registrarlos en la analítica.
+# Es una cola con tope: un `deque` con `maxlen` es seguro entre hilos para
+# append/pop, y así no crece sin control si nadie los consume.
+_ultimos_elegidos: deque[list[str]] = deque(maxlen=64)
+
+
+def documentos_de_la_ultima_consulta() -> list[str]:
+    """Qué documentos eligió el retrieval más reciente.
+
+    Sirve para el panel: cuando una respuesta salió mal, saber qué documentos
+    vio el modelo distingue un problema de RETRIEVAL (trajo los equivocados) de
+    uno de CONTENIDO (los trajo bien pero les falta el dato). Fue justo así
+    como se diagnosticó el bug #8.
+
+    Si el retrieval cayó al respaldo de mandar toda la base, devuelve vacío.
+    """
+    return _ultimos_elegidos.pop() if _ultimos_elegidos else []
 
 
 def precalentar() -> int:

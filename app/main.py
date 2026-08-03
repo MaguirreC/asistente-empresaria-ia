@@ -6,17 +6,19 @@ que consultan los endpoints del backend.
 """
 import json
 import logging
+import secrets
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
+from app import analitica
 from app.bedrock import BedrockError, stream_chat
 from app.config import settings
-from app.embeddings import precalentar
+from app.embeddings import documentos_de_la_ultima_consulta, precalentar
 from app.router import (
     ACCION_AYUDA_COMPRA,
     accion_de_menu,
@@ -128,6 +130,32 @@ def bienvenida(autenticado: bool = False):
     )
 
 
+@app.get("/analitica/resumen")
+def analitica_resumen(dias: int = 7, x_admin_key: str = Header(default="")):
+    """Métricas de uso para el panel administrativo.
+
+    **Protegido:** expone las preguntas que escribieron los usuarios, así que
+    no puede quedar abierto como el resto de la API. Se exige una clave
+    compartida en la cabecera `X-Admin-Key`.
+
+    Si no hay clave configurada en el servidor, el endpoint queda deshabilitado
+    a propósito: es preferible que el panel no funcione a que estos datos se
+    publiquen por un descuido de configuración.
+    """
+    if not settings.admin_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="La analítica no está habilitada: falta configurar ADMIN_API_KEY.",
+        )
+    # `compare_digest` en vez de `==` para no filtrar la clave por el tiempo
+    # que tarda la comparación.
+    if not secrets.compare_digest(x_admin_key, settings.admin_api_key):
+        raise HTTPException(status_code=401, detail="Clave de administración inválida.")
+
+    dias = max(1, min(dias, 90))  # el TTL de los registros es de 90 días
+    return analitica.resumen(dias)
+
+
 def _sugerencia_ayuda_compra(modulo: str | None, respuesta: str | None):
     """Ofrece el botón de ayuda guiada, salvo que la respuesta YA sea ese
     guion (no tiene sentido ofrecerlo justo después de haberlo dado).
@@ -205,6 +233,10 @@ def chat(request: ChatRequest):
     """
 
     def event_stream():
+        # Se va llevando para registrarlo al final, cuando el usuario ya tiene
+        # su respuesta. Ver el bloque `finally`.
+        registro: dict = {"pregunta": "", "respuesta": "", "origen": "modelo"}
+
         try:
             # Antes que nada, por si la conversación ya es demasiado larga.
             if excede_limite(request.messages):
@@ -218,6 +250,9 @@ def chat(request: ChatRequest):
             modulo = request.contexto.modulo if request.contexto else None
 
             texto_usuario = request.messages[-1].content
+            registro.update(
+                pregunta=texto_usuario, modulo=modulo, autenticado=request.autenticado
+            )
 
             # Qué fue lo último que dijo el asistente: hace falta para saber si
             # un "3" es una opción del menú o la respuesta a otra pregunta.
@@ -250,21 +285,34 @@ def chat(request: ChatRequest):
                 logger.info(
                     "Resuelto por el router, sin invocar al modelo (accion=%s)", accion
                 )
+                registro.update(
+                    respuesta=respuesta_directa, origen="router", accion=accion
+                )
                 yield f"data: {json.dumps({'delta': respuesta_directa}, ensure_ascii=False)}\n\n"
                 yield from _opciones_si_es_menu(respuesta_directa, request.autenticado)
                 yield from _navegacion(destino)
                 yield from _sugerencia_ayuda_compra(modulo, respuesta_directa)
                 return
 
+            acumulado = ""
             for evento in stream_chat(_para_el_modelo(request.messages), modulo):
                 if evento.tipo == "texto":
+                    acumulado += evento.valor
                     yield f"data: {json.dumps({'delta': evento.valor}, ensure_ascii=False)}\n\n"
                 elif evento.tipo == "descartar":
+                    # Ese texto no era la respuesta final: tampoco debe contar
+                    # como tal al analizar si el asistente supo responder.
+                    acumulado = ""
                     yield f"data: {json.dumps({'descartar': True})}\n\n"
                 elif evento.tipo == "herramienta":
                     yield f"data: {json.dumps({'progreso': evento.valor}, ensure_ascii=False)}\n\n"
                 elif evento.tipo == "costo":
+                    registro["costo_usd"] = evento.valor
                     yield f"data: {json.dumps({'usage': {'costo_usd': evento.valor}})}\n\n"
+            registro["respuesta"] = acumulado
+            # Qué documentos vio el modelo: distingue un fallo de retrieval de
+            # uno de contenido cuando se revisa una respuesta mala.
+            registro["documentos"] = documentos_de_la_ultima_consulta()
             yield from _navegacion(destino)
             yield from _sugerencia_ayuda_compra(modulo, None)
         except BedrockError as e:
@@ -276,6 +324,12 @@ def chat(request: ChatRequest):
             yield f"data: {json.dumps({'error': mensaje}, ensure_ascii=False)}\n\n"
         finally:
             yield f"data: {json.dumps({'done': True})}\n\n"
+
+            # Se registra DESPUÉS del `done`: el usuario ya tiene la respuesta
+            # completa, así que nada de esto le agrega espera. Y `registrar`
+            # nunca lanza excepciones, así que tampoco puede romper el stream.
+            if registro["pregunta"]:
+                analitica.registrar(**registro)
 
     return StreamingResponse(
         event_stream(),
