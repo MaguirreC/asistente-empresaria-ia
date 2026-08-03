@@ -27,6 +27,8 @@ ACCION_PREMIOS = "premios"
 ACCION_RECARGAR = "recargar"
 ACCION_PROBLEMA_COMPRA = "problema_compra"
 ACCION_CONTACTO = "contacto"
+# Arranca el flujo guiado que le arma la apuesta al usuario desde el chat.
+ACCION_JUGAR_CHANCE = "jugar_chance"
 # Opciones de usuario ya identificado. El asistente NO consulta estos datos:
 # solo lleva al usuario a la pantalla donde ya están. Es una decisión de
 # diseño — ver el bloque de navegación más abajo.
@@ -38,7 +40,7 @@ ACCION_MIS_COMPRAS = "mis_compras"
 # front, así que no se inventan instrucciones de "toca aquí" o "botón azul".
 _AYUDA_COMPRA: dict[str, str] = {
     "chance": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para hacer "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para hacer "
         "tu apuesta de Chance.\n\n"
         "Antes de comprar, hay 4 cosas que decidir:\n"
         "1. **La modalidad** — Uña, Pata, Directo, Combinado, o una especial "
@@ -49,7 +51,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "¿Ya sabes qué modalidad quieres jugar, o te explico las diferencias primero?"
     ),
     "astro": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para hacer "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para hacer "
         "tu apuesta de Astro.\n\n"
         "Antes de comprar, hay 4 cosas que decidir:\n"
         "1. **El número** — siempre son 4 cifras (0000 a 9999). El premio "
@@ -60,7 +62,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "¿Ya sabes qué número y signo quieres jugar, o te explico el plan de premios primero?"
     ),
     "baloto": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para jugar "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para jugar "
         "Baloto.\n\n"
         "Antes de comprar, hay 3 cosas que decidir:\n"
         "1. **Tus 5 números**, del 1 al 43. Puedes elegirlos tú o dejar que "
@@ -75,7 +77,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "acumulado primero?"
     ),
     "miloto": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para jugar "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para jugar "
         "MiLoto.\n\n"
         "Antes de comprar, hay 2 cosas que decidir:\n"
         "1. **Tus 5 números**, del 1 al 39, sin repetir. Puedes elegirlos tú "
@@ -86,7 +88,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "¿Ya tienes tus números, o te explico cómo se gana primero?"
     ),
     "loteria": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para comprar "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para comprar "
         "tu billete de lotería.\n\n"
         "Antes de comprar, hay 3 cosas que decidir:\n"
         "1. **Qué lotería** quieres jugar — cada una sortea un día fijo de la "
@@ -98,7 +100,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "¿Ya sabes qué lotería quieres, o te digo cuáles están disponibles?"
     ),
     "chance_millonario": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para jugar "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para jugar "
         "Chance Millonario.\n\n"
         "Es una modalidad de **doble acierto**: se cruza con las cuatro cifras "
         "del premio mayor de la última lotería del día, y juega todos los días, "
@@ -112,7 +114,7 @@ _AYUDA_COMPRA: dict[str, str] = {
     # decisiones que tomar y, sobre todo, datos que conviene confirmar ANTES de
     # pagar — una recarga a un número equivocado no se puede reversar.
     "recargas": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para hacer "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para hacer "
         "tu recarga.\n\n"
         "Antes de recargar, hay 3 cosas que confirmar:\n"
         "1. **El operador** — Claro, Movistar, Tigo, WOM o DIRECTV.\n"
@@ -123,7 +125,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "¿Ya tienes a la mano el número y el operador?"
     ),
     "paquetes": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para comprar "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para comprar "
         "tu paquete.\n\n"
         "Un paquete no es lo mismo que una recarga: en vez de cargarte saldo, "
         "incluye **minutos, datos y redes sociales** por un tiempo determinado.\n\n"
@@ -137,7 +139,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "diferencia con una recarga normal?"
     ),
     "recaudos": (
-        "¡Hola! Nuestro asistente virtual te guiará paso a paso para pagar "
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para pagar "
         "tu factura.\n\n"
         "Antes de pagar, hay 3 cosas que confirmar:\n"
         "1. **Qué empresa o convenio** vas a pagar.\n"
@@ -182,6 +184,10 @@ def es_guion_ayuda_compra(texto: str | None, modulo: str | None) -> bool:
 SIEMPRE, ANONIMO, AUTENTICADO = "siempre", "anonimo", "autenticado"
 
 _OPCIONES_MENU: tuple[tuple[str, str, str], ...] = (
+    # Va de primera porque es lo que más gente viene a hacer. Se muestra a
+    # todos: a quien no ha iniciado sesión se le explica que necesita cuenta y
+    # se le ofrecen las dos puertas, en vez de esconderle la opción.
+    ("🍀 Hacer un chance", ACCION_JUGAR_CHANCE, SIEMPRE),
     ("💰 Ver mi saldo", ACCION_VER_SALDO, AUTENTICADO),
     ("🧾 Mis compras", ACCION_MIS_COMPRAS, AUTENTICADO),
     ("📝 Cómo me registro", ACCION_REGISTRO, ANONIMO),
@@ -193,7 +199,7 @@ _OPCIONES_MENU: tuple[tuple[str, str, str], ...] = (
     ("📞 Contacto y PQRS", ACCION_CONTACTO, SIEMPRE),
 )
 
-SALUDO_BIENVENIDA = "¡Hola! Soy el asistente de Facilísimo. ¿En qué te ayudo?"
+SALUDO_BIENVENIDA = "¡Hola! Soy Facibot, el asistente de Facilísimo. ¿En qué te ayudo?"
 
 _PIE_MENU = "Responde con el número de la opción, o escríbeme tu pregunta directamente."
 
@@ -397,6 +403,30 @@ _DESTINO_POR_ACCION: dict[str, str] = {
 # lo manda a iniciar sesión, que es el paso que de verdad le falta.
 _REQUIEREN_SESION = {"saldo", "historial", "perfil"}
 
+# --- Comprar exige tener cuenta -------------------------------------------
+# El flujo guiado termina dejando una compra lista para confirmar, y eso no se
+# puede hacer sin sesión. Se corta ANTES de empezar a preguntar: hacerle
+# recorrer seis pasos para toparse con un muro al final sería peor.
+MENSAJE_REQUIERE_SESION = (
+    "Para hacer tu chance necesitas tener una cuenta e iniciar sesión. 🔐\n\n"
+    "Es rápido: si ya tienes cuenta, entra con tu documento y contraseña. Si "
+    "todavía no, crear una toma un par de minutos — solo necesitas tu documento "
+    "a la mano y ser mayor de 18 años.\n\n"
+    "Apenas entres, vuelve y te armo la apuesta paso a paso. 👇"
+)
+
+
+def destinos_de_sesion() -> list[dict[str, str]]:
+    """Las dos puertas de entrada, para ofrecerlas juntas.
+
+    Van las dos porque no sabemos cuál necesita el usuario: pedirle que se
+    registre a quien ya tiene cuenta es tan molesto como lo contrario.
+    """
+    return [
+        {"modulo": destino, "etiqueta": _DESTINOS[destino]}
+        for destino in ("ingreso", "registro")
+    ]
+
 # Cuando contesta el MODELO no hay acción, así que el destino se deduce del
 # mensaje del usuario. Los patrones son deliberadamente ESTRECHOS: ofrecer un
 # botón que lleva a la pantalla equivocada es peor que no ofrecer ninguno.
@@ -598,10 +628,23 @@ _PATRONES_AYUDA_COMPRA: dict[str, tuple[re.Pattern, ...]] = {
         re.compile(_INTENCION + r".*\bchance millonario\b"),
         re.compile(r"\bchance millonario\b.*" + _INTENCION),
     ),
+    # Chance tiene su propio set de verbos porque en la calle se pide de formas
+    # que no encajan en _INTENCION: "hazme un chance", "necesito hacer un
+    # chance". Ambas direcciones, igual que los demás juegos.
+    # El lookahead negativo evita robarle el turno a "chance_millonario" (ese
+    # entra primero en el diccionario, pero solo reconoce los verbos de
+    # _INTENCION, que no incluye "hacer/necesito/hazme").
     "chance": (
-        re.compile(r"\bcomo (hago|juego|apuesto|compro|puedo jugar)\b.*\bchance\b"),
-        re.compile(r"\bquiero (jugar|apostar|comprar)( al)? chance\b"),
-        re.compile(r"\bayuda(me)?\b.*\bchance\b"),
+        re.compile(
+            r"\b(como (hago|juego|apuesto|compro|puedo jugar)|"
+            r"(quiero|necesito) (jugar|apostar|comprar|hacer)|"
+            r"hazme|hagame|ayuda(me)?)\b.*\bchance\b(?!\s+millonario)"
+        ),
+        re.compile(
+            r"\bchance\b(?!\s+millonario).*\b(como (hago|juego|apuesto|compro|puedo jugar)|"
+            r"(quiero|necesito) (jugar|apostar|comprar|hacer)|"
+            r"hazme|hagame|ayuda(me)?)\b"
+        ),
     ),
     "astro": (
         re.compile(r"\bcomo (hago|juego|apuesto|compro|puedo jugar)\b.*\b(super )?astro\b"),
@@ -656,6 +699,16 @@ def _modulo_ayuda_compra(texto: str) -> str | None:
         if any(p.search(texto) for p in patrones):
             return modulo
     return None
+
+
+def producto_pedido(texto: str) -> str | None:
+    """Producto sobre el que el usuario pide ayuda para comprar, si alguno.
+
+    Lo usa `/chat` para decidir si arranca un flujo guiado antes de caer en la
+    respuesta enlatada. Misma detección que usa `resolver_texto`, expuesta
+    aparte para no duplicar los patrones.
+    """
+    return _modulo_ayuda_compra(_normalizar(texto))
 
 
 def resolver_accion(

@@ -1,4 +1,4 @@
-# Asistente Virtual — Apostar / Facilísimo
+# Facibot — Asistente Virtual Facilísimo
 
 Microservicio de IA para atención al cliente y asistencia de compra.
 Independiente del backend Spring: se despliega en AWS y el front lo consume.

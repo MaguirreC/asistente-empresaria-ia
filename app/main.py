@@ -1,4 +1,4 @@
-"""Servicio del asistente virtual de Apostar / Facilísimo.
+"""Servicio del asistente virtual de Facilísimo (Facibot).
 
 Fase 1: expone /chat conectado a Claude en Bedrock.
 Las fases siguientes añaden la base de conocimiento (RAG) y las herramientas
@@ -15,18 +15,22 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app import analitica
+from app import analitica, flujos
 from app.bedrock import BedrockError, stream_chat
 from app.config import settings
 from app.embeddings import documentos_de_la_ultima_consulta, precalentar
 from app.router import (
     ACCION_AYUDA_COMPRA,
+    ACCION_JUGAR_CHANCE,
+    MENSAJE_REQUIERE_SESION,
     accion_de_menu,
     destino_navegacion,
+    destinos_de_sesion,
     es_guion_ayuda_compra,
     es_menu,
     menu_texto,
     opciones_menu,
+    producto_pedido,
     resolver_accion,
     resolver_texto,
     tiene_guion_ayuda_compra,
@@ -77,7 +81,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Asistente Virtual - Apostar / Facilísimo",
+    title="Facibot - Asistente Virtual Facilísimo",
     description="Servicio de IA para atención al cliente y asistencia de compra.",
     version="0.1.0",
     lifespan=lifespan,
@@ -216,6 +220,56 @@ def _navegacion(destino: dict | None):
     yield f"data: {json.dumps({'navegacion': destino}, ensure_ascii=False)}\n\n"
 
 
+def _eventos_flujo(avance: "flujos.Avance"):
+    """Emite lo que el front necesita para pintar un paso del flujo guiado.
+
+    - `opciones_flujo`: los botones de ESTE paso. Se distingue de `opciones`
+      (el menú) a propósito: son cosas distintas y el front las pinta distinto.
+    - `flujo`: el estado a devolver en la siguiente petición. Si no llega, el
+      flujo terminó (o se canceló) y el front deja de mandarlo.
+    - `formulario`: solo en el último turno, con la compra ya armada.
+    """
+    if avance.opciones:
+        yield f"data: {json.dumps({'opciones_flujo': list(avance.opciones)}, ensure_ascii=False)}\n\n"
+    if avance.estado is not None:
+        yield f"data: {json.dumps({'flujo': avance.estado}, ensure_ascii=False)}\n\n"
+    if avance.formulario is not None:
+        yield f"data: {json.dumps({'formulario': avance.formulario}, ensure_ascii=False)}\n\n"
+
+
+def _producto_a_iniciar(
+    accion: str | None, modulo: str | None, texto: str
+) -> str | None:
+    """Producto cuyo flujo guiado hay que arrancar en este turno, si alguno.
+
+    Tres puertas de entrada, todas equivalentes: la opción del menú, el botón
+    "¿Necesitas ayuda?" dentro del módulo, y escribirlo ("quiero hacer un
+    chance"). Devuelve None si no hay flujo para lo que se pidió.
+    """
+    if accion == ACCION_JUGAR_CHANCE:
+        producto = "chance"
+    elif accion == ACCION_AYUDA_COMPRA:
+        producto = modulo
+    elif accion:
+        return None  # cualquier otra acción del menú no arranca un flujo
+    else:
+        producto = producto_pedido(texto)
+    return producto if flujos.hay_flujo(producto) else None
+
+
+def _retomar_flujo(avance: "flujos.Avance"):
+    """Repite la pregunta pendiente después de que el modelo resolvió una duda.
+
+    Sin esto, el usuario que pregunta "¿qué es un combinado?" a mitad del flujo
+    recibe la explicación y se queda sin saber que seguía una pregunta.
+    """
+    # Separado del texto del modelo por una línea en blanco, para que se lea
+    # como un turno aparte y no como continuación de la explicación.
+    delta = json.dumps({"delta": "\n\n" + avance.mensaje}, ensure_ascii=False)
+    yield f"data: {delta}\n\n"
+    yield from _eventos_flujo(avance)
+
+
 @app.post("/chat")
 def chat(request: ChatRequest):
     """Conversación con el asistente, en streaming (SSE).
@@ -265,15 +319,82 @@ def chat(request: ChatRequest):
             # número de una opción del menú ("3"), equivale a haber pulsado ese
             # botón, así que se trata igual. El número se resuelve contra el
             # menú de ESTE usuario, que cambia según haya iniciado sesión.
-            accion = request.action or accion_de_menu(
-                texto_usuario, ultimo_del_asistente, request.autenticado
+            #
+            # Con un flujo guiado en curso NO se interpreta como menú: ahí los
+            # pasos también se contestan con números, y un "1" es "la primera
+            # lotería de la lista", no "ver mi saldo". El flujo manda.
+            accion = request.action or (
+                None
+                if request.flujo is not None
+                else accion_de_menu(
+                    texto_usuario, ultimo_del_asistente, request.autenticado
+                )
             )
+
+            # --- Flujo guiado de compra ------------------------------------
+            # Va antes que todo lo demás: si hay un flujo en curso, lo que
+            # escribió el usuario es la respuesta a la pregunta pendiente, no
+            # una consulta suelta. Cuesta cero tokens.
+            #
+            # `retomar` queda cargado cuando el usuario preguntó algo en vez de
+            # contestar: responde el modelo y al final se repite la pregunta
+            # del paso para no dejarlo sin saber por dónde iba.
+            retomar = None
+
+            if request.flujo is not None and not accion:
+                avance = flujos.avanzar(
+                    request.flujo.producto, request.flujo.datos, texto_usuario
+                )
+                if avance.consultar_modelo:
+                    retomar = avance
+                else:
+                    logger.info(
+                        "Flujo guiado de %s, sin invocar al modelo",
+                        request.flujo.producto,
+                    )
+                    registro.update(respuesta=avance.mensaje, origen="flujo")
+                    yield f"data: {json.dumps({'delta': avance.mensaje}, ensure_ascii=False)}\n\n"
+                    yield from _eventos_flujo(avance)
+                    return
+
+            # Arrancar el flujo: por la opción del menú, por el botón
+            # "¿Necesitas ayuda?" del módulo, o porque el usuario escribió que
+            # quiere jugar ese producto.
+            if retomar is None:
+                producto = _producto_a_iniciar(accion, modulo, texto_usuario)
+
+                # Comprar exige cuenta. Se corta aquí, antes de la primera
+                # pregunta, y se ofrecen las dos puertas: entrar o registrarse.
+                if producto and not request.autenticado:
+                    logger.info("Flujo de %s pedido sin sesión iniciada", producto)
+                    registro.update(
+                        respuesta=MENSAJE_REQUIERE_SESION, origen="router", accion=accion
+                    )
+                    yield f"data: {json.dumps({'delta': MENSAJE_REQUIERE_SESION}, ensure_ascii=False)}\n\n"
+                    for destino in destinos_de_sesion():
+                        yield from _navegacion(destino)
+                    return
+
+                if producto:
+                    avance = flujos.iniciar(producto)
+                    logger.info("Arranca el flujo guiado de %s", producto)
+                    registro.update(respuesta=avance.mensaje, origen="flujo")
+                    yield f"data: {json.dumps({'delta': avance.mensaje}, ensure_ascii=False)}\n\n"
+                    yield from _eventos_flujo(avance)
+                    return
 
             # Si lo que se está resolviendo tiene una pantalla propia en la web,
             # se le ofrece al usuario el atajo para llegar — conteste el router
             # o conteste el modelo, para no obligarlo a buscarla a mano.
-            destino = destino_navegacion(
-                accion, texto_usuario, request.autenticado, modulo
+            #
+            # Con un flujo en curso NO se ofrece: el usuario está armando su
+            # compra desde el chat, y mandarlo a otra pantalla ahí lo pierde.
+            destino = (
+                None
+                if retomar
+                else destino_navegacion(
+                    accion, texto_usuario, request.autenticado, modulo
+                )
             )
 
             # Luego se intenta resolver en código. Un saludo o una consulta de
@@ -293,7 +414,12 @@ def chat(request: ChatRequest):
                 yield f"data: {json.dumps({'delta': respuesta_directa}, ensure_ascii=False)}\n\n"
                 yield from _opciones_si_es_menu(respuesta_directa, request.autenticado)
                 yield from _navegacion(destino)
-                yield from _sugerencia_ayuda_compra(modulo, respuesta_directa)
+                if retomar:
+                    # La duda salió gratis (horarios, acumulados...). Se retoma
+                    # el flujo donde iba en vez de dejarlo colgado.
+                    yield from _retomar_flujo(retomar)
+                else:
+                    yield from _sugerencia_ayuda_compra(modulo, respuesta_directa)
                 return
 
             acumulado = ""
@@ -316,7 +442,10 @@ def chat(request: ChatRequest):
             # uno de contenido cuando se revisa una respuesta mala.
             registro["documentos"] = documentos_de_la_ultima_consulta()
             yield from _navegacion(destino)
-            yield from _sugerencia_ayuda_compra(modulo, None)
+            if retomar:
+                yield from _retomar_flujo(retomar)
+            else:
+                yield from _sugerencia_ayuda_compra(modulo, None)
         except BedrockError as e:
             logger.error("Error atendiendo /chat: %s", e)
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"

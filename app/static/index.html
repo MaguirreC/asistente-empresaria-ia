@@ -100,6 +100,14 @@
   .menu-opciones button b { color: var(--acento); margin-right: 5px; }
 
   /* Señal de navegación: en el front real esto MUEVE al usuario de pantalla. */
+  /* El formulario final del flujo guiado: en el front real esto rellenaría la
+     pantalla del producto. Aquí se muestra crudo para poder verificarlo. */
+  .formulario {
+    margin: -6px 0 18px 0; padding: 12px 14px;
+    border: 1px solid #3a5a3f; border-radius: 10px; background: #1b2a1e;
+  }
+  .formulario b { display: block; margin-bottom: 8px; color: var(--acento); font-size: 13px; }
+  .formulario pre { margin: 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
   .navegacion { margin: -6px 0 18px 0; display: flex; }
   .navegacion button {
     background: #1d2b1f; border: 1px solid #3f7a4a; color: #8ee5a1;
@@ -308,6 +316,43 @@ function botonesMenu(opciones) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+// --- Flujo guiado de compra ---------------------------------------------
+// El estado que el backend devuelve en cada paso y que hay que reenviarle en
+// el siguiente mensaje. El front no lo interpreta: solo lo guarda y lo manda.
+let flujoActual = null;
+
+// Botones del paso actual. A diferencia del menú, aquí la etiqueta ES la
+// respuesta: se manda tal cual como si el usuario la hubiera escrito.
+function botonesFlujo(opciones) {
+  const envoltura = document.createElement('div');
+  envoltura.className = 'menu-opciones flujo';
+  opciones.forEach((etiqueta, i) => {
+    const boton = document.createElement('button');
+    boton.innerHTML = '<b></b>';
+    boton.querySelector('b').textContent = i + 1;
+    boton.appendChild(document.createTextNode(etiqueta));
+    boton.onclick = () => mandar(String(i + 1));
+    envoltura.appendChild(boton);
+  });
+  hilo.appendChild(envoltura);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// El front REAL rellenaría la pantalla del producto con estos datos. Aquí se
+// muestra el JSON tal cual, que es justo lo que hay que verificar.
+function tarjetaFormulario(formulario) {
+  const envoltura = document.createElement('div');
+  envoltura.className = 'formulario';
+  const titulo = document.createElement('b');
+  titulo.textContent = '🧾 Formulario para el front — producto: ' + formulario.producto;
+  const cuerpo = document.createElement('pre');
+  cuerpo.textContent = JSON.stringify(formulario, null, 2);
+  envoltura.appendChild(titulo);
+  envoltura.appendChild(cuerpo);
+  hilo.appendChild(envoltura);
+  chat.scrollTop = chat.scrollHeight;
+}
+
 // El front REAL llevaría al usuario a la pantalla del módulo. Aquí solo se
 // simula, porque este banco de pruebas no tiene las rutas de la web.
 function botonNavegacion(destino) {
@@ -357,6 +402,9 @@ async function mandar(textoBoton = null, accion = null, contextoForzado = null) 
   caja.innerHTML = '<span class="puntos"><span></span><span></span><span></span></span>';
 
   let acumulado = '';
+  // Si en esta respuesta NO llega el evento `flujo`, el flujo terminó (o se
+  // canceló) y hay que dejar de mandarlo.
+  let recibioFlujo = false;
   try {
     const r = await fetch('/chat', {
       method: 'POST',
@@ -366,6 +414,7 @@ async function mandar(textoBoton = null, accion = null, contextoForzado = null) 
         action: accion,
         contexto: contextoForzado || contextoActual(),
         autenticado: estaAutenticado(),
+        flujo: flujoActual,
       }),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -408,6 +457,13 @@ async function mandar(textoBoton = null, accion = null, contextoForzado = null) 
           sumarGasto(evento.usage.costo_usd);
         } else if (evento.opciones) {
           botonesMenu(evento.opciones);
+        } else if (evento.opciones_flujo) {
+          botonesFlujo(evento.opciones_flujo);
+        } else if (evento.flujo) {
+          flujoActual = evento.flujo;
+          recibioFlujo = true;
+        } else if (evento.formulario) {
+          tarjetaFormulario(evento.formulario);
         } else if (evento.sugerencia_accion) {
           botonSugerencia(evento.sugerencia_accion);
         } else if (evento.navegacion) {
@@ -422,6 +478,7 @@ async function mandar(textoBoton = null, accion = null, contextoForzado = null) 
     if (acumulado.trim()) {
       mensajes.push({ role: 'assistant', content: acumulado });
     }
+    if (!recibioFlujo) flujoActual = null;
   } catch (e) {
     caja.parentElement.className = 'msg error';
     caja.textContent = 'No se pudo contactar el servicio: ' + e.message;

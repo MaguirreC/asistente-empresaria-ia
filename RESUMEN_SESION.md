@@ -1,4 +1,4 @@
-# Resumen del proyecto — Asistente Virtual Apostar/Facilísimo
+# Resumen del proyecto — Facibot, Asistente Virtual Facilísimo
 
 Este documento existe para arrancar una sesión nueva sin perder contexto. Léelo
 completo antes de tocar código.

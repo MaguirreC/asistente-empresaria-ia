@@ -1,5 +1,5 @@
 """Modelos de entrada/salida de la API."""
-from typing import Literal, List
+from typing import Any, Dict, Literal, List
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +19,20 @@ class Contexto(BaseModel):
     modulo: str  # "chance", "baloto", "recargas"... ver CONTRATO_FRONT.md
 
 
+class EstadoFlujo(BaseModel):
+    """Dónde va el flujo guiado de compra.
+
+    Lo emite el backend en cada turno y el front lo devuelve tal cual en el
+    siguiente, igual que hace con `messages`. **No se guarda en el servidor**:
+    así el servicio sigue sin estado y da igual qué instancia atienda cada
+    turno — sin sesiones pegajosas ni Redis.
+
+    El front no tiene que interpretarlo ni construirlo: solo reenviarlo.
+    """
+    producto: str  # "chance"
+    datos: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ChatRequest(BaseModel):
     """Cuerpo de la petición al endpoint /chat.
 
@@ -33,6 +47,11 @@ class ChatRequest(BaseModel):
 
     # En qué módulo de compra está el usuario, si está en alguno.
     contexto: Contexto | None = None
+
+    # Estado del flujo guiado, tal como lo devolvió el backend en el turno
+    # anterior. Se manda mientras el flujo esté en curso; cuando el backend
+    # deja de devolverlo, el flujo terminó y el front no vuelve a mandarlo.
+    flujo: EstadoFlujo | None = None
 
     # Si el usuario ya inició sesión en la página. El front lo sabe; este
     # servicio NO recibe el token ni consulta datos privados (saldo, historial):

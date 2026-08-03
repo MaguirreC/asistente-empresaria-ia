@@ -14,6 +14,7 @@ Expone dos vistas del mismo dato:
 import logging
 import time
 from datetime import datetime, time as hora_del_dia
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -33,8 +34,25 @@ TIMEOUT_SEGUNDOS = 30.0
 # memoria: solo el primero paga la espera y se alivia la carga sobre SETA.
 CACHE_TTL_SEGUNDOS = 600  # 10 minutos
 
+
+class Loteria(NamedTuple):
+    """Una lotería del listado, ya normalizada.
+
+    Los tres primeros campos van en ese orden porque el resto del módulo los
+    desempaqueta posicionalmente. `codigo`, `id_` y `nombre_corto` son los
+    identificadores que usa el backend: el flujo guiado de compra los devuelve
+    al front para que arme la compra sin tener que casar nombres a mano.
+    """
+    nombre: str
+    hora_texto: str
+    hora: hora_del_dia | None
+    codigo: int | None = None
+    id_: int | None = None
+    nombre_corto: str | None = None
+
+
 # fecha -> (momento en que se guardó, loterías normalizadas)
-_cache: dict[str, tuple[float, list[tuple[str, str, hora_del_dia | None]]]] = {}
+_cache: dict[str, tuple[float, list[Loteria]]] = {}
 
 # Nombre del día en español, calculado en código. El modelo NUNCA debe deducir
 # el día de la semana a partir de la fecha numérica: ya vimos que se equivoca
@@ -66,7 +84,7 @@ def _describir_espera(minutos: int) -> str:
     return f"faltan {horas} h" if resto == 0 else f"faltan {horas} h {resto} min"
 
 
-def _consultar_backend(fecha: str) -> list[tuple[str, str, hora_del_dia | None]]:
+def _consultar_backend(fecha: str) -> list[Loteria]:
     """Pide el listado al backend y lo normaliza, ordenado por hora de cierre."""
     respuesta = httpx.get(
         f"{settings.backend_base_url}/chance/loterias",
@@ -81,17 +99,20 @@ def _consultar_backend(fecha: str) -> list[tuple[str, str, hora_del_dia | None]]
 
     loterias = (datos.get("listadoLoterias") or {}).get("loterias") or []
     normalizadas = [
-        (
-            lot.get("nombre") or "sin nombre",
-            lot.get("horaCierre") or "hora no informada",
-            _parsear_hora(lot.get("horaCierre")),
+        Loteria(
+            nombre=lot.get("nombre") or "sin nombre",
+            hora_texto=lot.get("horaCierre") or "hora no informada",
+            hora=_parsear_hora(lot.get("horaCierre")),
+            codigo=lot.get("codigo"),
+            id_=lot.get("id"),
+            nombre_corto=lot.get("nombreCorto"),
         )
         for lot in loterias
     ]
-    return sorted(normalizadas, key=lambda l: (l[2] is None, l[2] or hora_del_dia.min))
+    return sorted(normalizadas, key=lambda l: (l.hora is None, l.hora or hora_del_dia.min))
 
 
-def _obtener_loterias(fecha: str) -> list[tuple[str, str, hora_del_dia | None]]:
+def _obtener_loterias(fecha: str) -> list[Loteria]:
     """Listado del día, desde el caché si está vigente.
 
     Si el backend falla pero hay una copia del mismo día, la devuelve: un dato
@@ -110,18 +131,23 @@ def _obtener_loterias(fecha: str) -> list[tuple[str, str, hora_del_dia | None]]:
         logger.warning("Usando listado en caché vencido del %s", fecha)
         return guardado[1]
 
-    _cache.clear()  # solo interesa el día en curso
+    # Se guardan varias fechas a la vez: el flujo guiado de compra deja elegir
+    # día dentro de la próxima semana. Se poda lo vencido para que el caché no
+    # crezca sin fin.
+    for clave, (guardado_en, _) in list(_cache.items()):
+        if (time.monotonic() - guardado_en) >= CACHE_TTL_SEGUNDOS:
+            del _cache[clave]
     _cache[fecha] = (time.monotonic(), loterias)
     return loterias
 
 
 def _clasificar(
-    loterias: list[tuple[str, str, hora_del_dia | None]], ahora: datetime
+    loterias: list[Loteria], ahora: datetime
 ) -> tuple[list[tuple[str, str, int]], list[str], list[str]]:
     """Separa en abiertas (con minutos restantes), cerradas y sin hora legible."""
     minutos_ahora = ahora.hour * 60 + ahora.minute
     abiertas, cerradas, indefinidas = [], [], []
-    for nombre, hora_texto, hora in loterias:
+    for nombre, hora_texto, hora, *_ in loterias:
         if hora is None:
             indefinidas.append(nombre)
             continue
@@ -171,6 +197,35 @@ def resumen_para_usuario() -> str:
     if cerradas:
         partes.append(f"\nYa cerraron: {', '.join(cerradas)}.")
     return "\n".join(partes)
+
+
+def loterias_para_fecha(
+    fecha: str,
+) -> list[tuple[str, str, hora_del_dia | None]] | None:
+    """Loterías jugables en esa fecha (dd/MM/yyyy), como (nombre, hora, hora).
+
+    Para el flujo guiado de compra, donde el usuario tiene que ELEGIR una. Va
+    con la hora de cierre porque el flujo las agrupa por jornada: un día
+    cualquiera trae 25 loterías y en un chat eso no se puede listar de golpe.
+
+    Si la fecha es hoy se excluyen las que ya cerraron: ofrecerlas sería dejar
+    que el usuario arme una compra que el front va a rechazar después.
+
+    Devuelve **None** si no se pudo consultar el listado, que es distinto de
+    `[]` ("ese día no juega ninguna"): quien llama le dice cosas diferentes al
+    usuario en cada caso.
+    """
+    try:
+        loterias = _obtener_loterias(fecha)
+    except _SinDatos:
+        return None
+    ahora = datetime.now(BOGOTA)
+    if fecha != ahora.strftime("%d/%m/%Y"):
+        return list(loterias)
+    # Solo las que siguen abiertas. Se conserva el orden por hora de cierre.
+    abiertas, _, _ = _clasificar(loterias, ahora)
+    vigentes = {nombre for nombre, _, _ in abiertas}
+    return [l for l in loterias if l[0] in vigentes or l[2] is None]
 
 
 def loterias_del_dia() -> str:
