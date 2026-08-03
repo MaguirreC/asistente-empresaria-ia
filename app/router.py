@@ -360,6 +360,7 @@ _RESPUESTAS_MENU: dict[str, str] = {
 # muestra el front, que es quien tiene la sesión. Menos superficie de riesgo y
 # nada de credenciales pasando por este servicio.
 _DESTINOS: dict[str, str] = {
+    # Pantallas de gestión de la cuenta.
     "registro": "Crear mi cuenta",
     "ingreso": "Iniciar sesión",
     "pqrs": "Ir a radicar mi PQRS",
@@ -367,6 +368,18 @@ _DESTINOS: dict[str, str] = {
     "resultados": "Ver resultados",
     "historial": "Ver mi historial de compras",
     "perfil": "Ir a mi perfil",
+    # Pantallas de compra. Se ofrecen cuando el usuario pregunta por un
+    # producto en el que NO está: de nada sirve explicarle cómo jugar Baloto
+    # si además tiene que buscar dónde se juega.
+    "chance": "Ir a jugar Chance",
+    "astro": "Ir a jugar Astro",
+    "baloto": "Ir a jugar Baloto",
+    "miloto": "Ir a jugar MiLoto",
+    "loteria": "Ir a comprar Lotería",
+    "chance_millonario": "Ir a Chance Millonario",
+    "recargas": "Ir a recargas",
+    "paquetes": "Ir a paquetes",
+    "recaudos": "Ir a pagar servicios",
 }
 
 # Destino que corresponde a cada opción del menú.
@@ -445,7 +458,10 @@ def _destino_por_texto(texto: str) -> str | None:
 
 
 def destino_navegacion(
-    accion: str | None, texto: str | None = None, autenticado: bool = False
+    accion: str | None,
+    texto: str | None = None,
+    autenticado: bool = False,
+    modulo_actual: str | None = None,
 ) -> dict[str, str] | None:
     """Módulo al que el front debería poder llevar al usuario, si aplica.
 
@@ -454,12 +470,24 @@ def destino_navegacion(
     Devuelve None cuando no hay un destino claro: no ofrecer botón es una
     respuesta válida.
 
+    `modulo_actual` es dónde está parado el usuario (`contexto.modulo`), y sirve
+    para no ofrecerle ir a donde ya está.
+
     La sesión cambia dos cosas:
     - A quien ya entró no se le ofrece crear cuenta.
     - A quien no ha entrado, pedirle "mi saldo" o "mis compras" lo lleva a
       iniciar sesión, que es lo que realmente le falta para verlos.
     """
     modulo = _DESTINO_POR_ACCION.get(accion) if accion else None
+
+    # ¿Preguntó por un producto? Entonces el destino es la pantalla de ese
+    # producto — salvo que ya esté en ella, que es el caso de haber pulsado
+    # "¿Necesitas ayuda?" dentro del módulo.
+    if modulo is None and texto:
+        producto = _modulo_ayuda_compra(_normalizar(texto))
+        if producto and producto != modulo_actual:
+            modulo = producto
+
     if modulo is None and texto:
         modulo = _destino_por_texto(texto)
     if modulo is None:

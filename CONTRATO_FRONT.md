@@ -306,7 +306,9 @@ data: {"navegacion": {"modulo": "pqrs", "etiqueta": "Ir a radicar mi PQRS"}}
 data: {"done": true}
 ```
 
-### Los siete destinos a mapear
+### Los destinos a mapear
+
+**Pantallas de gestión de la cuenta:**
 
 | `modulo` | `etiqueta` | Cuándo llega |
 |---|---|---|
@@ -318,9 +320,27 @@ data: {"done": true}
 | `historial` | Ver mi historial de compras | preguntan por sus compras |
 | `perfil` | Ir a mi perfil | preguntan por cambiar correo, celular o datos |
 
-**El front debe mapear estos siete identificadores a sus rutas.** Es la lista
-completa: si llega un `modulo` desconocido, lo más seguro es no pintar el botón
-en vez de adivinar.
+**Pantallas de compra**, cuando el usuario pregunta por un producto:
+
+| `modulo` | `etiqueta` |
+|---|---|
+| `chance` | Ir a jugar Chance |
+| `astro` | Ir a jugar Astro |
+| `baloto` | Ir a jugar Baloto |
+| `miloto` | Ir a jugar MiLoto |
+| `loteria` | Ir a comprar Lotería |
+| `chance_millonario` | Ir a Chance Millonario |
+| `recargas` | Ir a recargas |
+| `paquetes` | Ir a paquetes |
+| `recaudos` | Ir a pagar servicios |
+
+> **No se ofrece ir a donde el usuario ya está.** Si manda
+> `contexto.modulo: "chance"` y el usuario pregunta por chance, **no llega
+> `navegacion`** — sería mandarlo a la pantalla en la que está parado. Pero si
+> estando en Chance pregunta por Baloto, sí llega el destino a `baloto`.
+
+**El front debe mapear estos identificadores a sus rutas.** Si llega un
+`modulo` desconocido, lo más seguro es no pintar el botón en vez de adivinar.
 
 **Se manda un identificador, no una URL**, a propósito: las rutas reales las
 conoce el front. Poner una URL aquí sería adivinarla.
@@ -555,7 +575,7 @@ sugerencia.
       respuesta del asistente.
 - [ ] Manejar los eventos `delta`, `descartar`, `progreso`, `opciones`,
       `navegacion`, `sugerencia_accion`, `error` y `done`.
-- [ ] Mapear los **siete módulos de navegación** a las rutas reales de la web.
+- [ ] Mapear los **módulos de navegación** a las rutas reales de la web (7 de gestión + 9 de productos).
 - [ ] Mandar `contexto.modulo` mientras el usuario esté dentro de un producto.
 - [ ] Convertir las negritas de Markdown, escapando el resto del HTML.
 

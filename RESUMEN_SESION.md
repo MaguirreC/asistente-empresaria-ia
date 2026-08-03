@@ -10,11 +10,13 @@ de soporte y guía la compra en la web de Facilísimo (juegos de suerte y azar
 en Colombia, regulado por Coljuegos). Es un **proyecto separado** del backend
 Spring (`apostar-backend-web`); lo consume el front vía HTTP/SSE.
 
-**Estado:** funcional en local, verificado con uso real (logs reales de
-Bedrock). La **base de conocimiento está completa** para todos los productos
-que se venden hoy. Lo que falta es principalmente de plataforma: desplegar en
-AWS (Fase 6, no iniciada), las herramientas que necesitan usuario autenticado
-(saldo, historial, puntos) y una suite de pruebas automáticas.
+**Estado: desplegado y funcionando en AWS**, con HTTPS y respondiendo en vivo
+(ECS Express Mode; la URL está en `CONTRATO_FRONT.md`). La **base de
+conocimiento está completa** para todos los productos que se venden hoy.
+
+Lo que queda es integración y operación: que el front consuma el contrato,
+destrabar el despliegue automático, y restringir `CORS_ORIGINS`. Ver
+**"Lo que sigue"** más abajo.
 
 ## Cómo correrlo
 
@@ -58,10 +60,21 @@ router.
 
 **1c. Navegación (`app/router.py` → evento SSE `navegacion`)** — cuando la
 consulta tiene una pantalla propia en la web, se le manda al front el atajo
-para llevar al usuario: `registro`, `ingreso`, `pqrs`, `saldo`, `resultados`,
-`historial` y `perfil`. Sale **conteste el router o conteste el modelo**. Se
-manda un identificador de módulo, **no una URL**: las rutas las conoce el
-front. Contrato completo en `CONTRATO_FRONT.md`.
+para llevar al usuario. Son dos grupos: **gestión de cuenta** (`registro`,
+`ingreso`, `pqrs`, `saldo`, `resultados`, `historial`, `perfil`) y **compra de
+productos** (los 9 módulos del co-piloto).
+
+Sale **conteste el router o conteste el modelo**. Se manda un identificador de
+módulo, **no una URL**: las rutas las conoce el front.
+
+Dos reglas que evitan sugerencias absurdas:
+- **No se ofrece ir a donde el usuario ya está.** Si `contexto.modulo` es
+  `chance` y pregunta por chance, no llega `navegacion`. Si estando en chance
+  pregunta por baloto, sí.
+- A un anónimo que pide algo suyo (saldo, historial, perfil) se lo manda a
+  `ingreso`, que es el paso que realmente le falta.
+
+Contrato completo en `CONTRATO_FRONT.md`.
 
 **1d. Estado de sesión (`autenticado`)** — el front manda en cada petición si
 el usuario ya inició sesión. Con eso el menú se adapta: a un anónimo se le
@@ -334,7 +347,7 @@ apaga, porque con recarga automática se reiniciaría en cada archivo guardado.
 1. **Fase 6: desplegar en AWS** siguiendo la sección de arriba.
 2. **Del lado del front**, para aprovechar lo que ya está: mandar
    `autenticado` en cada petición, meter el saludo de `/bienvenida` en el
-   historial, y mapear los siete módulos de navegación a sus rutas. Los tres
+   historial, y mapear los módulos de navegación a sus rutas. Los tres
    requisitos están en `CONTRATO_FRONT.md`.
 
 ### Estado del despliegue
@@ -376,7 +389,7 @@ Pendientes chicos:
 
 - `CONTRATO_FRONT.md` — **todo lo que el front necesita**, en un solo lugar:
   los tres endpoints, el menú de bienvenida, `autenticado`, los eventos SSE,
-  los siete módulos de navegación, el co-piloto y un checklist final de
+  los módulos de navegación, el co-piloto y un checklist final de
   implementación. Es el documento que se le entrega al dev de front.
 - `INVENTARIO_PREGUNTAS.md` — todas las preguntas posibles del backend
   analizado, con su estado.

@@ -272,7 +272,9 @@ def chat(request: ChatRequest):
             # Si lo que se está resolviendo tiene una pantalla propia en la web,
             # se le ofrece al usuario el atajo para llegar — conteste el router
             # o conteste el modelo, para no obligarlo a buscarla a mano.
-            destino = destino_navegacion(accion, texto_usuario, request.autenticado)
+            destino = destino_navegacion(
+                accion, texto_usuario, request.autenticado, modulo
+            )
 
             # Luego se intenta resolver en código. Un saludo o una consulta de
             # horarios no necesitan al modelo, y así no cuestan tokens.
