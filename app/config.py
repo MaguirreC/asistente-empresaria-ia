@@ -58,8 +58,9 @@ class Settings(BaseSettings):
     # Se puede apagar puntualmente con LIMITE_MENSAJES_ACTIVO=false en el .env
     # para depurar una conversación larga, pero en producción va encendido.
     #
-    # El tope cuenta TODOS los mensajes del historial, incluido el menú de
-    # bienvenida que el front agrega como turno del asistente.
+    # El tope cuenta respuestas del MODELO (`request.usos_modelo`), no mensajes
+    # del historial: el menú, el router y el flujo guiado de compra no tocan
+    # este tope porque no cuestan tokens. Ver `session_limit.py`.
     limite_mensajes_activo: bool = True
     limite_mensajes_max: int = 30
 

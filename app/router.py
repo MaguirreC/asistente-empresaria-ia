@@ -27,8 +27,28 @@ ACCION_PREMIOS = "premios"
 ACCION_RECARGAR = "recargar"
 ACCION_PROBLEMA_COMPRA = "problema_compra"
 ACCION_CONTACTO = "contacto"
+# Abre el submenú con las consultas menos frecuentes, para no llenar el
+# principal — ver `_OPCIONES_OTRAS_CONSULTAS`.
+ACCION_OTRAS_CONSULTAS = "otras_consultas"
+# Abre el submenú de Chance Millonario / Doble Play — ver `_OPCIONES_JUGAR_ACUMULADOS`.
+ACCION_JUGAR_ACUMULADOS = "jugar_acumulados"
+# Abre el submenú de Baloto / MiLoto — ver `_OPCIONES_JUGAR_LOTOS`.
+ACCION_JUGAR_LOTOS = "jugar_lotos"
+# Abre el submenú de Recargas / Paquetes / Recaudos — ver `_OPCIONES_SERVICIOS`.
+ACCION_SERVICIOS = "servicios"
 # Arranca el flujo guiado que le arma la apuesta al usuario desde el chat.
 ACCION_JUGAR_CHANCE = "jugar_chance"
+ACCION_JUGAR_ASTRO = "jugar_astro"
+ACCION_JUGAR_CHANCE_MILLONARIO = "jugar_chance_millonario"
+ACCION_JUGAR_DOBLE_PLAY = "jugar_doble_play"
+ACCION_JUGAR_BALOTO = "jugar_baloto"
+ACCION_JUGAR_MILOTO = "jugar_miloto"
+# Guion informativo de un producto, disparado directo desde el submenú (no
+# necesita `contexto.modulo` como el genérico `ayuda_compra`, porque cada uno
+# ya sabe a qué producto corresponde).
+ACCION_AYUDA_RECARGAS = "ayuda_recargas"
+ACCION_AYUDA_PAQUETES = "ayuda_paquetes"
+ACCION_AYUDA_RECAUDOS = "ayuda_recaudos"
 # Opciones de usuario ya identificado. El asistente NO consulta estos datos:
 # solo lleva al usuario a la pantalla donde ya están. Es una decisión de
 # diseño — ver el bloque de navegación más abajo.
@@ -102,18 +122,32 @@ _AYUDA_COMPRA: dict[str, str] = {
     "chance_millonario": (
         "¡Hola! Soy Facibot, y te voy a guiar paso a paso para jugar "
         "Chance Millonario.\n\n"
-        "Es una modalidad de **doble acierto**: se cruza con las cuatro cifras "
-        "del premio mayor de la última lotería del día, y juega todos los días, "
+        "Es una modalidad de **doble acierto**: eliges **2 loterías** de las "
+        "que juegan hoy y **5 números de 4 cifras**, con la expectativa de que "
+        "2 de esos números coincidan con el resultado. Juega todos los días, "
         "incluidos festivos. La apuesta cuesta **$6.000**.\n\n"
         "Ten en cuenta que el acumulado es **paramutual**: si en una misma "
         "fecha hay varios ganadores, el premio se reparte entre ellos.\n\n"
-        "¿Quieres que te explique cómo se juega en detalle, o ya sabes qué "
-        "números vas a elegir?"
+        "¿Ya sabes qué números y loterías quieres, o te explico el plan de "
+        "premios primero?"
+    ),
+    "doble_play": (
+        "¡Hola! Soy Facibot, y te voy a guiar paso a paso para jugar "
+        "Doble Play Regional.\n\n"
+        "Es de la misma familia que Chance Millonario: eliges **2 loterías** "
+        "de las que juegan hoy y **5 números de 4 cifras**, con la expectativa "
+        "de que 2 de esos números coincidan con el resultado. La apuesta "
+        "cuesta **$4.000**, y solo se juega en el eje cafetero (Armenia, "
+        "Pereira y Manizales).\n\n"
+        "Si aciertas solo 1 de los 5 números hay un premio de consuelo; con 2 "
+        "entras al acumulado, que es **paramutual**.\n\n"
+        "¿Ya sabes qué números y loterías quieres, o te explico el plan de "
+        "premios primero?"
     ),
     # Los tres que siguen no son juegos: no se eligen números, pero sí hay
     # decisiones que tomar y, sobre todo, datos que conviene confirmar ANTES de
     # pagar — una recarga a un número equivocado no se puede reversar.
-    "recargas": (
+    "recarga": (
         "¡Hola! Soy Facibot, y te voy a guiar paso a paso para hacer "
         "tu recarga.\n\n"
         "Antes de recargar, hay 3 cosas que confirmar:\n"
@@ -124,7 +158,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "La recarga llega de inmediato.\n\n"
         "¿Ya tienes a la mano el número y el operador?"
     ),
-    "paquetes": (
+    "paquete": (
         "¡Hola! Soy Facibot, y te voy a guiar paso a paso para comprar "
         "tu paquete.\n\n"
         "Un paquete no es lo mismo que una recarga: en vez de cargarte saldo, "
@@ -138,7 +172,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "¿Ya sabes qué operador y qué paquete quieres, o te explico primero la "
         "diferencia con una recarga normal?"
     ),
-    "recaudos": (
+    "recaudo": (
         "¡Hola! Soy Facibot, y te voy a guiar paso a paso para pagar "
         "tu factura.\n\n"
         "Antes de pagar, hay 3 cosas que confirmar:\n"
@@ -184,24 +218,104 @@ def es_guion_ayuda_compra(texto: str | None, modulo: str | None) -> bool:
 SIEMPRE, ANONIMO, AUTENTICADO = "siempre", "anonimo", "autenticado"
 
 _OPCIONES_MENU: tuple[tuple[str, str, str], ...] = (
-    # Va de primera porque es lo que más gente viene a hacer. Se muestra a
-    # todos: a quien no ha iniciado sesión se le explica que necesita cuenta y
-    # se le ofrecen las dos puertas, en vez de esconderle la opción.
+    # TODAS las opciones de "jugar" van primero, agrupadas — son lo que más
+    # gente viene a hacer, y así el usuario no tiene que buscar entre trámites
+    # (saldo, registro, recargas...) para encontrar el juego que quiere. Se
+    # muestran a todos: a quien no ha iniciado sesión se le explica que
+    # necesita cuenta y se le ofrecen las dos puertas, en vez de esconderle
+    # la opción.
     ("🍀 Hacer un chance", ACCION_JUGAR_CHANCE, SIEMPRE),
+    ("🔮 Hacer un astro", ACCION_JUGAR_ASTRO, SIEMPRE),
+    # Chance Millonario y Doble Play son la misma familia de juego (doble
+    # acierto, 2 loterías + 5 números) — viven juntos en su propio submenú en
+    # vez de sumar dos entradas más acá.
+    ("🎰 Jugar acumulados", ACCION_JUGAR_ACUMULADOS, SIEMPRE),
+    # Baloto y MiLoto también tienen flujo guiado, pero no son de la misma
+    # familia que Chance Millonario/Doble Play (no son de doble acierto) — van
+    # en su propio submenú en vez de mezclarlos.
+    ("🎱 Jugar Baloto o MiLoto", ACCION_JUGAR_LOTOS, SIEMPRE),
     ("💰 Ver mi saldo", ACCION_VER_SALDO, AUTENTICADO),
     ("🧾 Mis compras", ACCION_MIS_COMPRAS, AUTENTICADO),
     ("📝 Cómo me registro", ACCION_REGISTRO, ANONIMO),
     ("🎲 Loterías y horarios de hoy", ACCION_LOTERIAS_HOY, SIEMPRE),
     ("💵 Ver acumulados", ACCION_ACUMULADOS, SIEMPRE),
-    ("🏆 Cómo reclamo un premio", ACCION_PREMIOS, SIEMPRE),
     ("💳 Cómo recargo saldo", ACCION_RECARGAR, SIEMPRE),
-    ("⚠️ Tuve un problema con una compra", ACCION_PROBLEMA_COMPRA, SIEMPRE),
-    ("📞 Contacto y PQRS", ACCION_CONTACTO, SIEMPRE),
+    # Recargas, paquetes y recaudos no son juegos: no tienen flujo guiado, solo
+    # el guion informativo (sección 8 del contrato). Van juntos porque los
+    # tres son "pagar/recargar algo", la misma familia de trámite.
+    ("💳 Recargas, paquetes y recaudos", ACCION_SERVICIOS, SIEMPRE),
+    # Las consultas menos frecuentes (premios, problemas, PQRS) viven en un
+    # submenú aparte — ver `_OPCIONES_OTRAS_CONSULTAS` — para no llenar el
+    # menú principal de opciones que la mayoría no necesita.
+    ("📋 Otras consultas", ACCION_OTRAS_CONSULTAS, SIEMPRE),
 )
+
+# Submenú de consultas menos frecuentes. Es una lista aparte, no visibilidad
+# condicional dentro de `_OPCIONES_MENU`: así el principal se mantiene corto
+# sin importar cuántas entren aquí.
+_OPCIONES_OTRAS_CONSULTAS: tuple[tuple[str, str], ...] = (
+    ("🏆 Cómo reclamo un premio", ACCION_PREMIOS),
+    ("⚠️ Tuve un problema con una compra", ACCION_PROBLEMA_COMPRA),
+    ("📞 Contacto y PQRS", ACCION_CONTACTO),
+)
+
+# Submenú de los dos juegos de doble acierto con flujo guiado.
+_OPCIONES_JUGAR_ACUMULADOS: tuple[tuple[str, str], ...] = (
+    ("💰 Chance Millonario", ACCION_JUGAR_CHANCE_MILLONARIO),
+    ("🎯 Doble Play Regional", ACCION_JUGAR_DOBLE_PLAY),
+)
+
+# Submenú de los otros dos juegos con flujo guiado.
+_OPCIONES_JUGAR_LOTOS: tuple[tuple[str, str], ...] = (
+    ("🎱 Baloto", ACCION_JUGAR_BALOTO),
+    ("🎟️ MiLoto", ACCION_JUGAR_MILOTO),
+)
+
+# Submenú de los tres productos que no son juegos, sin flujo guiado — solo
+# arrancan el guion informativo directo, sin pasar por `contexto.modulo`.
+_OPCIONES_SERVICIOS: tuple[tuple[str, str], ...] = (
+    ("📶 Recargas de celular", ACCION_AYUDA_RECARGAS),
+    ("📦 Paquetes", ACCION_AYUDA_PAQUETES),
+    ("🧾 Recaudos y facturas", ACCION_AYUDA_RECAUDOS),
+)
+
+# Todos los submenús del sistema, indexados por la acción que los abre. Así
+# `accion_de_menu` y `_opciones_si_es_menu` (en main.py) no necesitan saber
+# cuántos hay ni sus nombres — solo recorren este diccionario. Agregar un
+# submenú nuevo es agregar una entrada aquí, no tocar la lógica de resolución.
+_SUBMENUS: dict[str, tuple[tuple[str, str], ...]] = {
+    ACCION_OTRAS_CONSULTAS: _OPCIONES_OTRAS_CONSULTAS,
+    ACCION_JUGAR_ACUMULADOS: _OPCIONES_JUGAR_ACUMULADOS,
+    ACCION_JUGAR_LOTOS: _OPCIONES_JUGAR_LOTOS,
+    ACCION_SERVICIOS: _OPCIONES_SERVICIOS,
+}
+
+_ENCABEZADOS_SUBMENU: dict[str, str] = {
+    ACCION_OTRAS_CONSULTAS: "Estas son las consultas que puedo resolver directo:",
+    ACCION_JUGAR_ACUMULADOS: (
+        "Chance Millonario y Doble Play se juegan igual: 2 loterías y 5 "
+        "números. ¿Cuál de los dos quieres jugar?"
+    ),
+    ACCION_JUGAR_LOTOS: "¿Cuál de los dos quieres jugar?",
+    ACCION_SERVICIOS: "¿Qué necesitas hacer?",
+}
 
 SALUDO_BIENVENIDA = "¡Hola! Soy Facibot, el asistente de Facilísimo. ¿En qué te ayudo?"
 
 _PIE_MENU = "Responde con el número de la opción, o escríbeme tu pregunta directamente."
+
+# Aviso de privacidad (Ley 1581 de 2012 / Decreto 1377 de 2013) que el front
+# muestra al abrir el widget — ver `BienvenidaResponse.aviso_tratamiento_datos`.
+# Mismo responsable y enlace que ya están documentados para el modelo en
+# knowledge/legal-y-juego-responsable.md; esto es solo el resumen corto para
+# mostrar antes de que el usuario escriba, no reemplaza la política completa.
+AVISO_TRATAMIENTO_DATOS = (
+    "Esta conversación puede quedar registrada para mejorar el servicio. Los "
+    "datos que puedan identificarte (correo, documento, teléfono) se "
+    "enmascaran antes de guardarse. Responsable: Red de Servicios del "
+    "Quindío S.A. Política completa de tratamiento de datos: "
+    "https://www.facilisimo.co/pdf/PoliticaTratamientoDatosPersonales.pdf"
+)
 
 
 def _visibles(autenticado: bool) -> list[tuple[str, str]]:
@@ -231,6 +345,46 @@ def opciones_menu(autenticado: bool = False) -> list[dict]:
     ]
 
 
+# id de submenú -> su texto ya armado. Se precalculan una vez porque las
+# opciones no cambian en tiempo de ejecución.
+_TEXTOS_SUBMENU: dict[str, str] = {
+    id_submenu: (
+        f"{_ENCABEZADOS_SUBMENU[id_submenu]}\n\n"
+        + "\n".join(f"{i}. {etiqueta}" for i, (etiqueta, _) in enumerate(opciones, 1))
+        + f"\n\n{_PIE_MENU}"
+    )
+    for id_submenu, opciones in _SUBMENUS.items()
+}
+
+
+def submenu_texto(id_submenu: str) -> str:
+    """El texto numerado de un submenú. Ninguno depende de `autenticado`: sus
+    opciones se ven igual para todos."""
+    return _TEXTOS_SUBMENU[id_submenu]
+
+
+def opciones_submenu(id_submenu: str) -> list[dict]:
+    """Un submenú como datos, para que el front pinte botones."""
+    return [
+        {"numero": i, "etiqueta": etiqueta, "accion": accion}
+        for i, (etiqueta, accion) in enumerate(_SUBMENUS[id_submenu], 1)
+    ]
+
+
+def submenu_de(texto: str | None) -> str | None:
+    """El id del submenú al que corresponde ese texto, si es alguno.
+
+    Pública porque `main.py` la necesita para saber CUÁL submenú repintar
+    (`opciones_submenu(id)`) cuando la respuesta coincide con uno.
+    """
+    if texto is None:
+        return None
+    for id_submenu, texto_submenu in _TEXTOS_SUBMENU.items():
+        if texto == texto_submenu:
+            return id_submenu
+    return None
+
+
 def accion_de_menu(
     texto: str, ultimo_del_asistente: str | None = None, autenticado: bool = False
 ) -> str | None:
@@ -240,22 +394,35 @@ def accion_de_menu(
 
     1. El mensaje entero debe ser el número. "1" es una selección de menú;
        "1 chance" o "juego 3 cifras" son preguntas y van al modelo.
-    2. El menú tiene que ser **lo último que vio el usuario**. Si no, un "1"
-       puede ser la respuesta a otra pregunta: la opción de "problema con una
-       compra" termina con "cuéntame cuál es tu caso", y quien conteste "1"
-       pensando en la primera viñeta recibiría otra cosa.
+    2. El menú (o el submenú que corresponda) tiene que ser **lo último que
+       vio el usuario**. Si no, un "1" puede ser la respuesta a otra
+       pregunta: la opción de "problema con una compra" termina con
+       "cuéntame cuál es tu caso", y quien conteste "1" pensando en la
+       primera viñeta recibiría otra cosa.
 
     Si todavía no hay ningún mensaje del asistente, el chat acaba de abrirse y
     lo único que el usuario pudo ver es el menú, así que el número cuenta.
 
     El número se resuelve contra el menú de ESTE usuario: el 1 de alguien con
     sesión iniciada es "ver mi saldo", y el de un anónimo es "cómo me registro".
+    Contra un submenú es siempre la misma lista, sin importar la sesión.
     """
     plano = _normalizar(texto)
     if not plano.isdigit():
         return None
-    visibles = _visibles(autenticado)
     indice = int(plano) - 1
+
+    # Un submenú manda si es lo último que el usuario vio: sus opciones
+    # también se numeran desde 1, y sin esta comprobación un "2" ahí se
+    # resolvería contra el menú principal por error.
+    id_submenu = submenu_de(ultimo_del_asistente)
+    if id_submenu is not None:
+        opciones = _SUBMENUS[id_submenu]
+        if not 0 <= indice < len(opciones):
+            return None
+        return opciones[indice][1]
+
+    visibles = _visibles(autenticado)
     if not 0 <= indice < len(visibles):
         return None
     accion = visibles[indice][1]
@@ -265,12 +432,17 @@ def accion_de_menu(
 
 
 def es_menu(texto: str | None) -> bool:
-    """Si ese texto es el menú, en cualquiera de sus dos variantes.
+    """Si ese texto es el menú principal, en cualquiera de sus dos variantes.
 
     Se comprueban las dos porque el historial puede traer un menú pintado
     cuando el usuario todavía no había iniciado sesión (o al revés).
     """
     return texto is not None and texto in (menu_texto(False), menu_texto(True))
+
+
+def es_submenu(texto: str | None) -> bool:
+    """Si ese texto es alguno de los submenús (cualquiera de ellos)."""
+    return submenu_de(texto) is not None
 
 
 # --- Respuestas enlatadas del menú ---------------------------------------
@@ -383,9 +555,10 @@ _DESTINOS: dict[str, str] = {
     "miloto": "Ir a jugar MiLoto",
     "loteria": "Ir a comprar Lotería",
     "chance_millonario": "Ir a Chance Millonario",
-    "recargas": "Ir a recargas",
-    "paquetes": "Ir a paquetes",
-    "recaudos": "Ir a pagar servicios",
+    "doble_play": "Ir a Doble Play",
+    "recarga": "Ir a recargas",
+    "paquete": "Ir a paquetes",
+    "recaudo": "Ir a pagar servicios",
 }
 
 # Destino que corresponde a cada opción del menú.
@@ -397,6 +570,12 @@ _DESTINO_POR_ACCION: dict[str, str] = {
     ACCION_PROBLEMA_COMPRA: "historial",
     ACCION_VER_SALDO: "saldo",
     ACCION_MIS_COMPRAS: "historial",
+    # Estas tres arrancan desde el submenú "Servicios", no desde la pantalla
+    # del producto — a diferencia de `ayuda_compra`, el usuario no está ahí
+    # todavía, así que sí tiene sentido ofrecerle el atajo para llegar.
+    ACCION_AYUDA_RECARGAS: "recarga",
+    ACCION_AYUDA_PAQUETES: "paquete",
+    ACCION_AYUDA_RECAUDOS: "recaudo",
 }
 
 # Destinos que no tienen sentido sin sesión iniciada: a quien no ha entrado se
@@ -407,8 +586,10 @@ _REQUIEREN_SESION = {"saldo", "historial", "perfil"}
 # El flujo guiado termina dejando una compra lista para confirmar, y eso no se
 # puede hacer sin sesión. Se corta ANTES de empezar a preguntar: hacerle
 # recorrer seis pasos para toparse con un muro al final sería peor.
+# Genérico a propósito: aplica a cualquier producto con flujo guiado (hoy
+# Chance y Astro), no solo al primero que se construyó.
 MENSAJE_REQUIERE_SESION = (
-    "Para hacer tu chance necesitas tener una cuenta e iniciar sesión. 🔐\n\n"
+    "Para hacer tu compra necesitas tener una cuenta e iniciar sesión. 🔐\n\n"
     "Es rápido: si ya tienes cuenta, entra con tu documento y contraseña. Si "
     "todavía no, crear una toma un par de minutos — solo necesitas tu documento "
     "a la mano y ser mayor de 18 años.\n\n"
@@ -621,73 +802,87 @@ def _es_consulta_de_acumulados_general(texto: str) -> bool:
 # EL ORDEN IMPORTA: se devuelve el primero que coincida. "chance_millonario"
 # va antes que "chance" porque "quiero jugar chance millonario" también
 # encaja en los patrones de chance, y ahí ganaría el guion equivocado.
-_INTENCION = r"\b(como (hago|juego|apuesto|compro|puedo jugar)|quiero (jugar|apostar|comprar)|ayuda(me)?)\b"
+
+# Set de verbos ancho: además de "cómo hago/quiero jugar", reconoce
+# "hacer/hazme/hágame/necesito" — así se pide "hazme un astro" o "hazme un
+# baloto" en la calle. Lo usan todos los productos de este diccionario.
+_INTENCION_AMPLIA = (
+    r"(como (hago|juego|apuesto|compro|puedo jugar)|"
+    r"(quiero|necesito) (jugar|apostar|comprar|hacer)|"
+    r"hazme|hagame|ayuda(me)?)"
+)
 
 _PATRONES_AYUDA_COMPRA: dict[str, tuple[re.Pattern, ...]] = {
+    # Van antes que "chance" porque "quiero jugar chance millonario" también
+    # encaja en los patrones de chance, y ahí ganaría el guion equivocado.
     "chance_millonario": (
-        re.compile(_INTENCION + r".*\bchance millonario\b"),
-        re.compile(r"\bchance millonario\b.*" + _INTENCION),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bchance millonario\b"),
+        re.compile(r"\bchance millonario\b.*\b" + _INTENCION_AMPLIA + r"\b"),
     ),
-    # Chance tiene su propio set de verbos porque en la calle se pide de formas
-    # que no encajan en _INTENCION: "hazme un chance", "necesito hacer un
-    # chance". Ambas direcciones, igual que los demás juegos.
-    # El lookahead negativo evita robarle el turno a "chance_millonario" (ese
-    # entra primero en el diccionario, pero solo reconoce los verbos de
-    # _INTENCION, que no incluye "hacer/necesito/hazme").
+    "doble_play": (
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bdoble\s*play\b"),
+        re.compile(r"\bdoble\s*play\b.*\b" + _INTENCION_AMPLIA + r"\b"),
+    ),
+    # El lookahead negativo evita robarle el turno a "chance_millonario": sin
+    # él, "quiero hacer un chance millonario" también encajaría aquí (los dos
+    # usan el mismo set de verbos), y como el orden del diccionario decide,
+    # ganaría el guion equivocado si "chance" no descartara "millonario".
     "chance": (
-        re.compile(
-            r"\b(como (hago|juego|apuesto|compro|puedo jugar)|"
-            r"(quiero|necesito) (jugar|apostar|comprar|hacer)|"
-            r"hazme|hagame|ayuda(me)?)\b.*\bchance\b(?!\s+millonario)"
-        ),
-        re.compile(
-            r"\bchance\b(?!\s+millonario).*\b(como (hago|juego|apuesto|compro|puedo jugar)|"
-            r"(quiero|necesito) (jugar|apostar|comprar|hacer)|"
-            r"hazme|hagame|ayuda(me)?)\b"
-        ),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bchance\b(?!\s+millonario)"),
+        re.compile(r"\bchance\b(?!\s+millonario).*\b" + _INTENCION_AMPLIA + r"\b"),
     ),
+    # Mismo set de verbos que chance (incluye "hacer/hazme/hágame/necesito"):
+    # ahora que Astro también tiene flujo guiado, "quiero hacer astro" debe
+    # arrancarlo gratis, no caer al modelo.
     "astro": (
-        re.compile(r"\bcomo (hago|juego|apuesto|compro|puedo jugar)\b.*\b(super )?astro\b"),
-        re.compile(r"\bquiero (jugar|apostar|comprar)( al)? (super )?astro\b"),
-        re.compile(r"\bayuda(me)?\b.*\b(super )?astro\b"),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\b(super )?astro\b"),
+        re.compile(r"\b(super )?astro\b.*\b" + _INTENCION_AMPLIA + r"\b"),
     ),
+    # Mismo set de verbos ancho que chance/astro (incluye "hacer/hazme"):
+    # "hazme un baloto" es tan común en la calle como "quiero jugar baloto".
     "baloto": (
-        re.compile(_INTENCION + r".*\bbaloto\b"),
-        re.compile(r"\bbaloto\b.*" + _INTENCION),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bbaloto\b"),
+        re.compile(r"\bbaloto\b.*\b" + _INTENCION_AMPLIA + r"\b"),
     ),
     "miloto": (
-        re.compile(_INTENCION + r".*\bmi ?loto\b"),
-        re.compile(r"\bmi ?loto\b.*" + _INTENCION),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bmi ?loto\b"),
+        re.compile(r"\bmi ?loto\b.*\b" + _INTENCION_AMPLIA + r"\b"),
     ),
     # Solo con señales inequívocas de la lotería tradicional. Un "cómo juego la
     # lotería" a secas se deja pasar al modelo: mucha gente le dice "lotería" a
     # cualquier juego de azar, y darle el guion de billetes sería adivinar.
     "loteria": (
-        re.compile(_INTENCION + r".*\b(billete|billetes|fraccion|fracciones)\b"),
-        re.compile(r"\b(billete|billetes|fraccion|fracciones)\b.*" + _INTENCION),
-        re.compile(_INTENCION + r".*\bloteria tradicional\b"),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\b(billete|billetes|fraccion|fracciones)\b"),
+        re.compile(r"\b(billete|billetes|fraccion|fracciones)\b.*\b" + _INTENCION_AMPLIA + r"\b"),
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bloteria tradicional\b"),
     ),
     # Recargar el CELULAR y recargar el SALDO de la cuenta son cosas distintas.
     # Por eso se exige que aparezca el celular: "quiero recargar saldo" no debe
     # caer aquí, sino ir al conocimiento de saldo y recargas.
-    "recargas": (
+    #
+    # OJO: acá NO sirve `_INTENCION_AMPLIA` — esa exige "quiero JUGAR/HACER",
+    # y aquí el verbo natural es el propio "recargar" ("quiero recargar el
+    # celular"), no "quiero hacer una recarga". Se usa un set de palabras
+    # sueltas en cambio, solo con "hacer/hazme/hágame" agregados.
+    "recarga": (
         re.compile(
-            r"\b(quiero|como|necesito|ayuda(me)?)\b.*\brecarg\w+\b.{0,30}"
-            r"\b(celular|movil|numero|linea|minutos)\b"
+            r"\b(quiero|como|necesito|hacer|hazme|hagame|ayuda(me)?)\b.*"
+            r"\brecarg\w+\b.{0,30}\b(celular|movil|numero|linea|minutos)\b"
         ),
         re.compile(
             r"\brecarg\w+\b.{0,30}\b(celular|movil|numero|linea|minutos)\b.*"
-            r"\b(quiero|como|necesito|ayuda(me)?)\b"
+            r"\b(quiero|como|necesito|hacer|hazme|hagame|ayuda(me)?)\b"
         ),
     ),
-    "paquetes": (
-        re.compile(_INTENCION + r".*\bpaquete\b"),
-        re.compile(r"\bpaquete\b.*" + _INTENCION),
+    "paquete": (
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bpaquete\b"),
+        re.compile(r"\bpaquete\b.*\b" + _INTENCION_AMPLIA + r"\b"),
     ),
-    "recaudos": (
+    # Mismo motivo que "recarga": el verbo natural es "pagar", no "hacer".
+    "recaudo": (
         re.compile(
-            r"\b(quiero|como|necesito|donde)\b.{0,20}\bpag\w+\b.{0,25}"
-            r"\b(factura|recibo|servicio|servicios|recaudo)\b"
+            r"\b(donde|quiero|como|necesito|hacer|hazme|hagame|ayuda(me)?)\b.{0,20}"
+            r"\bpag\w+\b.{0,25}\b(factura|recibo|servicio|servicios|recaudo)\b"
         ),
         re.compile(r"\bayuda(me)?\b.*\b(recaudo|factura)\b"),
     ),
@@ -717,12 +912,16 @@ def resolver_accion(
     """Atiende un botón del front. Intención conocida, cero ambigüedad."""
     if accion == ACCION_MENU:
         return menu_texto(autenticado)
+    if accion in _SUBMENUS:
+        return submenu_texto(accion)
     if accion == ACCION_LOTERIAS_HOY:
         return resumen_loterias()
     if accion == ACCION_ACUMULADOS:
         return resumen_acumulados()
     if accion == ACCION_AYUDA_COMPRA:
         return _AYUDA_COMPRA.get(modulo, _AYUDA_COMPRA_GENERICA)
+    if accion in (ACCION_AYUDA_RECARGAS, ACCION_AYUDA_PAQUETES, ACCION_AYUDA_RECAUDOS):
+        return _AYUDA_COMPRA[_DESTINO_POR_ACCION[accion]]
     if accion in _RESPUESTAS_MENU:
         return _RESPUESTAS_MENU[accion]
     logger.warning("Acción desconocida recibida del front: %s", accion)

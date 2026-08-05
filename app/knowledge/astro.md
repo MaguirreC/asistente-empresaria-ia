@@ -16,7 +16,14 @@ Astro.
 - **Tipo de sorteo:** se puede jugar **Astro Sol** (sorteo del día) o **Astro
   Luna** (sorteo de la noche).
 - **Frecuencia:** hay dos sorteos diarios (Sol y Luna) de **lunes a sábado**,
-  y un solo sorteo los **domingos y festivos**.
+  y un solo sorteo los **domingos y festivos** (Astro Sol no juega esos días).
+- **Horarios de sorteo:**
+  - Astro Sol: lunes a sábado, **4:00 p.m.**
+  - Astro Luna: lunes a viernes **10:50 p.m.**, sábado **10:42 p.m.**,
+    domingo y festivos **8:30 p.m.**
+- **Cierre de ventas: 10 minutos antes del sorteo**, para los dos. Es decir,
+  Astro Sol cierra a las 3:50 p.m.; Astro Luna cierra a las 10:40 p.m.
+  (lunes a viernes), 10:32 p.m. (sábado) u 8:20 p.m. (domingo/festivo).
 
 ## Valor de la apuesta
 

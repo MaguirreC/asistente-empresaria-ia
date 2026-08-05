@@ -33,9 +33,12 @@ cuelgan de esa base.
   suyo, le dice al front a qué pantalla llevarlo.
 - Muchas respuestas se resuelven **sin invocar al modelo** (todo el menú, los
   saludos, los guiones de compra). Esas son gratis e instantáneas.
-- **Chance tiene un flujo guiado** que le arma la apuesta al usuario desde el
-  chat y devuelve un formulario listo para rellenar la pantalla. Es lo único
-  que exige trabajo nuevo del front. Ver **sección 7**.
+- **Chance, Astro, Chance Millonario, Doble Play Regional, Baloto y MiLoto
+  tienen flujo guiado**: le arman la apuesta al usuario desde el chat y
+  devuelven un formulario listo para rellenar la pantalla. Ver **sección 7**.
+- ⚠️ **`usos_modelo` es obligatorio de implementar, no opcional.** Sin él, el
+  límite de conversación no se activa nunca — ver la nota en la **sección 4**
+  y el checklist (**sección 10**).
 
 ---
 
@@ -59,19 +62,36 @@ GET /bienvenida?autenticado=false
 
 ```json
 {
-  "mensaje": "¡Hola! Soy Facibot, el asistente de Facilísimo. ¿En qué te ayudo?\n\n1. 🍀 Hacer un chance\n2. 📝 Cómo me registro\n3. 🎲 Loterías y horarios de hoy\n…",
+  "mensaje": "¡Hola! Soy Facibot, el asistente de Facilísimo. ¿En qué te ayudo?\n\n1. 🍀 Hacer un chance\n2. 🔮 Hacer un astro\n3. 🎰 Jugar acumulados\n4. 🎱 Jugar Baloto o MiLoto\n5. 📝 Cómo me registro\n…",
   "opciones": [
     { "numero": 1, "etiqueta": "🍀 Hacer un chance", "accion": "jugar_chance" },
-    { "numero": 2, "etiqueta": "📝 Cómo me registro", "accion": "registro" },
-    { "numero": 3, "etiqueta": "🎲 Loterías y horarios de hoy", "accion": "loterias_hoy" }
-  ]
+    { "numero": 2, "etiqueta": "🔮 Hacer un astro", "accion": "jugar_astro" },
+    { "numero": 3, "etiqueta": "🎰 Jugar acumulados", "accion": "jugar_acumulados" },
+    { "numero": 4, "etiqueta": "🎱 Jugar Baloto o MiLoto", "accion": "jugar_lotos" },
+    { "numero": 5, "etiqueta": "📝 Cómo me registro", "accion": "registro" }
+  ],
+  "aviso_tratamiento_datos": "Esta conversación puede quedar registrada para mejorar el servicio. Los datos que puedan identificarte (correo, documento, teléfono) se enmascaran antes de guardarse. Responsable: Red de Servicios del Quindío S.A. Política completa de tratamiento de datos: https://www.facilisimo.co/pdf/PoliticaTratamientoDatosPersonales.pdf"
 }
 ```
+
+> **No hardcodees el orden ni los números.** El menú se reordena de vez en
+> cuando (por ejemplo, todas las opciones de "jugar" se agruparon al
+> principio en esta sesión) — pinta siempre lo que llega en `opciones`, en
+> el orden en que llega.
 
 - **`mensaje`** ya trae el menú numerado escrito. Se puede pintar tal cual como
   primer mensaje del asistente.
 - **`opciones`** son los mismos ítems como datos, por si prefieres pintar
   botones en vez de (o además de) la lista numerada.
+- **`aviso_tratamiento_datos`** es el aviso de privacidad (Ley 1581 de 2012)
+  que hay que mostrarle al usuario al abrir el chat. Se pinta **como un
+  mensaje del asistente más, ANTES del mensaje del menú** (mismo estilo de
+  burbuja, se puede usar una letra un poco más chica para diferenciarlo).
+  **Pero NO se agrega al historial `messages`** que se manda de vuelta en
+  `/chat` — es solo visual. Si se agrega al historial, deja de coincidir
+  exactamente con el texto del menú y rompe la detección de "el usuario
+  respondió un número del menú" (ver sección 4): solo el mensaje de
+  `mensaje` va a `messages`, el aviso no.
 
 Es `GET` y no `/chat` porque al abrir el widget todavía no hay conversación, y
 `/chat` exige un historial con al menos un mensaje.
@@ -119,6 +139,99 @@ como pregunta y van al modelo.
 El menú no reemplaza nada: el usuario puede ignorarlo y escribir su pregunta
 en cualquier momento.
 
+### 2.1 El submenú "Otras consultas"
+
+Para que el menú principal no se llene, las consultas menos frecuentes
+(premios, problemas con una compra, PQRS) **no están ahí** — viven en un
+submenú aparte, detrás de la opción **"📋 Otras consultas"**.
+
+Funciona **exactamente igual** que el menú principal, con su propio evento:
+
+```
+data: {"delta": "Estas son las consultas que puedo resolver directo:\n\n1. 🏆 Cómo reclamo un premio\n2. ⚠️ Tuve un problema con una compra\n3. 📞 Contacto y PQRS\n\n…"}
+data: {"opciones": [
+  { "numero": 1, "etiqueta": "🏆 Cómo reclamo un premio", "accion": "premios" },
+  { "numero": 2, "etiqueta": "⚠️ Tuve un problema con una compra", "accion": "problema_compra" },
+  { "numero": 3, "etiqueta": "📞 Contacto y PQRS", "accion": "contacto" }
+]}
+data: {"done": true}
+```
+
+Es el **mismo evento `opciones`** que el menú principal — no hay uno nuevo que
+aprender. Y aplica la misma regla: agrega ese mensaje al historial, porque un
+`"2"` suelto solo se resuelve contra el submenú si es **lo último que el
+usuario vio** (si no, se interpreta contra el menú principal, o va al modelo).
+No hace falta que el front distinga "estoy en el submenú" — el backend lo
+deduce del historial, igual que con el menú principal.
+
+**No cuesta tokens**, igual que el resto del menú.
+
+### 2.2 El submenú "Jugar acumulados"
+
+Mismo mecanismo, otro submenú: **Chance Millonario** y **Doble Play
+Regional** son la misma familia de juego (doble acierto, 2 loterías + 5
+números) y viven agrupados detrás de **"🎰 Jugar acumulados"** en vez de sumar
+dos botones más al principal.
+
+```
+data: {"delta": "Chance Millonario y Doble Play se juegan igual: 2 loterías y 5 números. ¿Cuál de los dos quieres jugar?\n\n1. 💰 Chance Millonario\n2. 🎯 Doble Play Regional\n\n…"}
+data: {"opciones": [
+  { "numero": 1, "etiqueta": "💰 Chance Millonario", "accion": "jugar_chance_millonario" },
+  { "numero": 2, "etiqueta": "🎯 Doble Play Regional", "accion": "jugar_doble_play" }
+]}
+data: {"done": true}
+```
+
+Elegir cualquiera de las dos **arranca su flujo guiado directamente** (sección
+7.4.2) — no hay un paso intermedio. Mismas reglas que el resto: agrega el
+mensaje al historial, `"1"`/`"2"` solo cuentan si el submenú es lo último que
+el usuario vio, y no cuesta tokens.
+
+### 2.3 El submenú "Jugar Baloto o MiLoto"
+
+Mismo mecanismo, para los otros dos juegos con flujo guiado — van aparte de
+"Jugar acumulados" porque no son de la misma familia (no son de doble
+acierto):
+
+```
+data: {"delta": "¿Cuál de los dos quieres jugar?\n\n1. 🎱 Baloto\n2. 🎟️ MiLoto\n\n…"}
+data: {"opciones": [
+  { "numero": 1, "etiqueta": "🎱 Baloto", "accion": "jugar_baloto" },
+  { "numero": 2, "etiqueta": "🎟️ MiLoto", "accion": "jugar_miloto" }
+]}
+data: {"done": true}
+```
+
+Igual que "Jugar acumulados": elegir cualquiera arranca su flujo guiado
+directo (sección 7.4.3), mismo evento `opciones`, mismas reglas de historial.
+
+### 2.4 El submenú "Recargas, paquetes y recaudos"
+
+Estos tres **no son juegos y no tienen flujo guiado** — solo el guion
+informativo de siempre (sección 8), pero arrancado directo desde el menú en
+vez de necesitar que el usuario ya esté en la pantalla del producto:
+
+```
+data: {"delta": "¿Qué necesitas hacer?\n\n1. 📶 Recargas de celular\n2. 📦 Paquetes\n3. 🧾 Recaudos y facturas\n\n…"}
+data: {"opciones": [
+  { "numero": 1, "etiqueta": "📶 Recargas de celular", "accion": "ayuda_recargas" },
+  { "numero": 2, "etiqueta": "📦 Paquetes", "accion": "ayuda_paquetes" },
+  { "numero": 3, "etiqueta": "🧾 Recaudos y facturas", "accion": "ayuda_recaudos" }
+]}
+data: {"done": true}
+```
+
+Elegir una de las tres devuelve el guion informativo del producto **y además
+un `navegacion`** hacia esa pantalla — a diferencia del botón "¿Necesitas
+ayuda?" (sección 8.2), acá el usuario todavía no está en esa pantalla, así
+que sí tiene sentido ofrecerle el atajo:
+
+```
+data: {"delta": "¡Hola! Soy Facibot, y te voy a guiar paso a paso para hacer tu recarga.\n\n…"}
+data: {"navegacion": { "modulo": "recarga", "etiqueta": "Ir a recargas" }}
+data: {"done": true}
+```
+
 ---
 
 ## 3. `autenticado` — estado de sesión
@@ -142,12 +255,13 @@ quien tiene la sesión.
 |---|---|---|
 | Opción "Cómo me registro" | se muestra | **se oculta** |
 | Opciones "Ver mi saldo" y "Mis compras" | no aparecen | **aparecen** |
-| Opción "Hacer un chance" | se muestra, pero **pide iniciar sesión** | arranca el flujo |
+| Opciones "Hacer un chance" y "Hacer un astro" | se muestran, pero **piden iniciar sesión** | arrancan el flujo |
 | Pide saldo / historial / perfil | navega a `ingreso` | navega a la pantalla real |
 | Pide "crear cuenta" | navega a `registro` | no se ofrece navegación |
 
-Menú de **8 opciones** para anónimo y **9** con sesión, numeradas de corrido en
-ambos casos.
+Menú de **10 opciones** para anónimo y **11** con sesión, numeradas de corrido
+en ambos casos (sin contar los submenús — 2.1 a 2.4 — que siempre tienen las
+suyas propias).
 
 > ⚠️ **El mismo número significa cosas distintas en cada estado:** el `2` de un
 > anónimo es "cómo me registro" y el de alguien con sesión es "ver mi saldo".
@@ -176,32 +290,83 @@ ambos casos.
 
 | Campo | Obligatorio | Qué es |
 |---|---|---|
-| `messages` | sí | Historial completo. Solo roles `user` y `assistant`; las instrucciones del asistente viven en el servidor. |
+| `messages` | sí | Historial completo. Solo roles `user` y `assistant`; las instrucciones del asistente viven en el servidor. **El último elemento SIEMPRE debe ser `role: "user"`** — es lo que el usuario acaba de escribir o pulsar. |
 | `autenticado` | recomendado | Si el usuario tiene sesión iniciada. Por defecto `false`. |
 | `action` | no | Id del botón que pulsó el usuario (ver tabla abajo). Se resuelve en código, sin costo. |
 | `contexto` | no | `{ "modulo": "chance" }` — en qué producto está el usuario. Ver secciones 7 y 8. |
 | `flujo` | no | Estado del flujo guiado, **tal como llegó** en el turno anterior. Ver sección 7. |
+| `usos_modelo` | técnicamente opcional, en la práctica obligatorio | Cuántas respuestas de esta conversación costaron tokens. La API no lo exige, pero sin él el límite de conversación no se activa nunca. Ver abajo. |
 
-> Hay un **tope de 30 mensajes por conversación**. Al superarlo, el asistente
-> responde pidiendo empezar una nueva. Cuenta todo el historial, incluido el
-> saludo de bienvenida.
+> ⚠️ **Si `messages[-1].role` no es `"user"`, la API responde `400`.** Es
+> literal: cuando el usuario pulsa un botón o escribe algo, ese mensaje
+> **tiene que estar agregado al array `messages` antes de mandar la
+> petición** — igual que ya se agrega la respuesta del asistente después de
+> cada turno. Saltarse esto no es un detalle cosmético: el backend usa
+> `messages[-1].content` como "lo que pidió el usuario" en TODO el router
+> (menú, navegación, flujo guiado...). Si ese último mensaje termina siendo
+> el saludo o el menú del propio asistente (por no haber agregado el turno
+> del usuario), el router interpreta ESE texto como si fuera la petición —
+> y como el menú menciona "Cómo recargo saldo", puede terminar sugiriendo
+> navegar a `saldo` sin que tenga nada que ver con lo que el usuario pidió.
+> Ya pasó exactamente eso en producción.
+
+> Hay un **tope de 30 respuestas del modelo por conversación**. Al superarlo,
+> el asistente responde pidiendo empezar una nueva.
+>
+> **No es un tope de mensajes.** El backend no guarda estado entre
+> peticiones — solo ve el historial de texto que le mandas, y ahí una
+> respuesta del router (o de un flujo guiado) se ve igual que una del modelo.
+> No puede saber por sí solo cuáles costaron tokens. Por eso **el front tiene
+> que traer la cuenta de vuelta**, en `usos_modelo`, igual que ya hace con
+> `flujo`:
+>
+> ```js
+> let usosModelo = 0;
+> // cada vez que llega el evento `usage` en la respuesta:
+> usosModelo += 1;
+> // y se manda en la SIGUIENTE petición:
+> { messages, usos_modelo: usosModelo, ... }
+> ```
+>
+> Si no se manda, el backend asume `0` — es decir, **si no se implementa este
+> campo, el límite nunca se activa**. No es un roto: el service no tiene otra
+> forma de contar, así que confía en lo que le llega. Un usuario que
+> manipule su propio request a mano podría evadirlo, pero eso ya no es el uso
+> normal que este límite busca frenar.
+>
+> Por qué importa: sin este campo, si el límite se midiera sobre `messages`
+> (como antes), una sola compra guiada de varios pasos (elegir loterías,
+> números...) llenaría el tope sin haber costado nada — cortando exactamente
+> el uso legítimo que el asistente existe para facilitar.
 
 ### Valores de `action`
 
 | `action` | Qué hace |
 |---|---|
 | `menu` | Devuelve el menú (con el evento `opciones`) |
+| `otras_consultas` | Devuelve el submenú "Otras consultas" (con el evento `opciones`) — ver sección 2.1 |
+| `jugar_acumulados` | Devuelve el submenú "Jugar acumulados" (con el evento `opciones`) — ver sección 2.2 |
+| `jugar_lotos` | Devuelve el submenú "Jugar Baloto o MiLoto" (con el evento `opciones`) — ver sección 2.3 |
+| `servicios` | Devuelve el submenú "Recargas, paquetes y recaudos" (con el evento `opciones`) — ver sección 2.4 |
 | `jugar_chance` | Arranca el flujo guiado de Chance (ver sección 7). **Sin sesión** responde que hace falta cuenta y manda dos `navegacion` |
+| `jugar_astro` | Arranca el flujo guiado de Astro (ver sección 7.4.1). Mismo trato sin sesión que `jugar_chance` |
+| `jugar_chance_millonario` | Arranca el flujo guiado de Chance Millonario (ver sección 7.4.2). Mismo trato sin sesión |
+| `jugar_doble_play` | Arranca el flujo guiado de Doble Play Regional (ver sección 7.4.2). Mismo trato sin sesión |
+| `jugar_baloto` | Arranca el flujo guiado de Baloto (ver sección 7.4.3). Mismo trato sin sesión |
+| `jugar_miloto` | Arranca el flujo guiado de MiLoto (ver sección 7.4.3). Mismo trato sin sesión |
+| `ayuda_recargas` | Guion informativo de Recargas, directo (sin pasar por `contexto.modulo`) → además navega a `recarga` |
+| `ayuda_paquetes` | Guion informativo de Paquetes, directo → además navega a `paquete` |
+| `ayuda_recaudos` | Guion informativo de Recaudos, directo → además navega a `recaudo` |
 | `registro` | Cómo registrarse → navega a `registro` |
 | `ver_saldo` | Dónde ver el saldo → navega a `saldo` *(solo con sesión)* |
 | `mis_compras` | Dónde ver las compras → navega a `historial` *(solo con sesión)* |
 | `loterias_hoy` | Loterías y horarios de hoy (dato en vivo) |
 | `acumulados` | Acumulados vigentes (dato en vivo) |
-| `premios` | Cómo reclamar un premio → navega a `resultados` |
+| `premios` | Cómo reclamar un premio → navega a `resultados` (dentro del submenú) |
 | `recargar` | Cómo recargar saldo → navega a `saldo` |
-| `problema_compra` | Problemas con una compra → navega a `historial` |
-| `contacto` | Contacto y PQRS → navega a `pqrs` |
-| `ayuda_compra` | Con `modulo: "chance"` arranca el flujo guiado (sección 7); con cualquier otro producto, el guion informativo (sección 8) |
+| `problema_compra` | Problemas con una compra → navega a `historial` (dentro del submenú) |
+| `contacto` | Contacto y PQRS → navega a `pqrs` (dentro del submenú) |
+| `ayuda_compra` | Con `modulo` en `"chance"`, `"astro"`, `"chance_millonario"`, `"doble_play"`, `"baloto"` o `"miloto"` arranca el flujo guiado (sección 7); con cualquier otro producto, el guion informativo (sección 8) |
 
 Todas se resuelven **sin invocar al modelo**.
 
@@ -346,9 +511,9 @@ data: {"done": true}
 | `miloto` | Ir a jugar MiLoto |
 | `loteria` | Ir a comprar Lotería |
 | `chance_millonario` | Ir a Chance Millonario |
-| `recargas` | Ir a recargas |
-| `paquetes` | Ir a paquetes |
-| `recaudos` | Ir a pagar servicios |
+| `recarga` | Ir a recargas |
+| `paquete` | Ir a paquetes |
+| `recaudo` | Ir a pagar servicios |
 
 > **No se ofrece ir a donde el usuario ya está.** Si manda
 > `contexto.modulo: "chance"` y el usuario pregunta por chance, **no llega
@@ -398,15 +563,19 @@ reutilizar el mismo componente.
 
 ---
 
-## 7. Flujo guiado de compra (Chance)
+## 7. Flujo guiado de compra
 
 > **Esto es lo nuevo.** Antes, a quien quería jugar se le mandaba a la pantalla
 > del producto con un `navegacion` y allá se las arreglaba solo. Ahora el
 > asistente **le arma la compra desde el chat** y te devuelve los datos ya
 > listos para rellenar la pantalla.
 >
-> Hoy solo **Chance** tiene flujo guiado. Los demás productos siguen con el
-> guion informativo de la sección 8, sin cambios.
+> Hoy tienen flujo guiado **Chance, Astro, Chance Millonario, Doble Play
+> Regional, Baloto y MiLoto**. Los demás cuatro productos (Lotería, Recargas,
+> Paquetes y Recaudos) siguen con el guion informativo de la sección 8, sin
+> cambios. Es el mismo motor para los seis — lo que cambia es la forma del
+> `formulario` final (7.4 Chance, 7.4.1 Astro, 7.4.2 Chance Millonario /
+> Doble Play, 7.4.3 Baloto / MiLoto).
 
 ### 7.1 Cómo funciona
 
@@ -470,14 +639,31 @@ Tres formas, todas gratis y equivalentes:
 | pulsa "¿Necesitas ayuda?" en la pantalla de Chance | `action: "ayuda_compra"` + `contexto: {"modulo": "chance"}` |
 | escribe "quiero hacer un chance", "hazme un chance", "ayuda con un chance"… | nada especial, `POST /chat` normal |
 
+**Astro arranca igual**: `action: "jugar_astro"` desde el botón "🔮 Hacer un
+astro" del menú, `ayuda_compra` + `contexto: {"modulo": "astro"}` desde su
+pantalla, o escribiendo "quiero jugar astro", "hazme un astro", etc.
+
+**Chance Millonario y Doble Play Regional** no tienen botón directo en el
+menú principal — se llega al submenú **"🎰 Jugar acumulados"** (sección 2.2)
+y de ahí sí: `action: "jugar_chance_millonario"` o `action:
+"jugar_doble_play"`. También arrancan escribiendo "quiero jugar chance
+millonario", "hazme un doble play", etc., o con `ayuda_compra` +
+`contexto: {"modulo": "chance_millonario"}` / `{"modulo": "doble_play"}`
+desde sus pantallas.
+
+**Baloto y MiLoto tampoco tienen botón dedicado en el menú ni submenú
+propio** — arrancan solo por las mismas dos vías: `ayuda_compra` +
+`contexto: {"modulo": "baloto"}` / `{"modulo": "miloto"}` desde sus
+pantallas, o escribiendo "quiero jugar baloto", "hazme un miloto", etc.
+
 ### 7.3.1 Hace falta sesión iniciada
 
 El flujo termina en una compra lista para confirmar, y eso no se puede hacer
 sin cuenta. Por eso, si llega `autenticado: false`, **el flujo no arranca** por
-ninguna de las tres vías. En su lugar:
+ninguna de las vías (aplica igual a Chance y a Astro). En su lugar:
 
 ```
-data: {"delta": "Para hacer tu chance necesitas tener una cuenta e iniciar sesión. 🔐…"}
+data: {"delta": "Para hacer tu compra necesitas tener una cuenta e iniciar sesión. 🔐…"}
 data: {"navegacion": {"modulo": "ingreso", "etiqueta": "Iniciar sesión"}}
 data: {"navegacion": {"modulo": "registro", "etiqueta": "Crear mi cuenta"}}
 data: {"done": true}
@@ -529,6 +715,137 @@ que si no lo rellenas la frase queda colgada.
 > ⚠️ **El asistente no compra nada.** Deja el formulario armado; el usuario
 > siempre confirma y ejecuta la compra en la pantalla. Ver sección 8.
 
+### 7.4.1 El formulario de Astro
+
+Distinto orden de preguntas y **distinta forma de `formulario`** — a diferencia
+de Chance, el sorteo aplica a todo el tiquete y el usuario puede repetir
+varias apuestas (otro número, otro signo, otro valor) sin volver a elegirlo:
+
+```
+data: {"delta": "¡Listo! Así queda tu Astro:\n\n• **Sorteo:** Los dos — Sol y Luna\n…"}
+data: {"formulario": {
+  "producto": "astro",
+  "sorteo": "ambos",
+  "apuestas": [
+    { "numero": "1234", "signo": "leo", "valor": 2000 },
+    { "numero": "5678", "signo": "todos", "valor": 3000 }
+  ]
+}}
+data: {"done": true}
+```
+
+| Campo | Qué es |
+|---|---|
+| `sorteo` | `"sol"`, `"luna"` o `"ambos"` |
+| `apuestas` | **Lista**, una por cada número que jugó (puede ser una sola) |
+| `apuestas[].numero` | String de **exactamente 4 dígitos** — en Astro no existe la modalidad de 3 o 2 cifras |
+| `apuestas[].signo` | Uno de los 12 signos en minúsculas y sin tilde (`"leo"`, `"escorpion"`, `"geminis"`...), o `"todos"` si el usuario quiso jugarlos todos |
+| `apuestas[].valor` | Pesos, entre 500 y 10.000 |
+
+> `signo: "todos"` significa que el usuario quiere apostar ese número en los
+> 12 signos. El asistente no sabe cómo lo modela la pantalla (¿12 líneas?
+> ¿una casilla "todos"?) — mapéalo según tu UI real.
+
+### 7.4.2 El formulario de Chance Millonario y Doble Play Regional
+
+Misma mecánica para los dos (son la misma familia de juego): eligen **2
+loterías** y **5 números de 4 cifras**. El valor **no se pregunta** — es fijo,
+así que **no aparece un paso de valor**, solo en el formulario final.
+
+```
+data: {"delta": "¡Listo! Así queda tu Chance Millonario:\n\n• **Loterías:** EL DORADO MAÑANA y SAMÁN DE LA SUERTE\n…"}
+data: {"formulario": {
+  "producto": "chance_millonario",
+  "loterias": [
+    { "codigo": 13, "id": -827260349, "nombre": "EL DORADO MANANA", "nombreCorto": "DOMA" },
+    { "codigo": 63, "id": -827175756, "nombre": "SAMAN DE LA SUERTE", "nombreCorto": "SAMA" }
+  ],
+  "numeros": ["1234", "5678", "9012", "3456", "7890"],
+  "valor": 6000
+}}
+data: {"done": true}
+```
+
+Con Doble Play Regional es igual, salvo `"producto": "doble_play_regional"` y
+`"valor": 4000`.
+
+| Campo | Qué es |
+|---|---|
+| `loterias` | **Lista de 2 objetos**, no nombres — mismo criterio que Chance (7.4): mapea por `codigo` o `id`, nunca por `nombre` |
+| `loterias[].nombre` | ⚠️ En Doble Play puede venir **igual al `nombreCorto`** (`"DOMA"`, `"CAFD"`...): ese endpoint no siempre trae el nombre completo, y el asistente no lo inventa |
+| `numeros` | **Lista de exactamente 5** strings de 4 dígitos cada uno |
+| `valor` | Fijo — $6.000 en Chance Millonario, $4.000 en Doble Play Regional. No lo eligió el usuario |
+
+> **Estos dos flujos no tienen paso de fecha.** El endpoint que trae las
+> loterías siempre devuelve las de HOY — no hay opción de armar la apuesta
+> para otro día, a diferencia de Chance.
+>
+> **Doble Play Local (3 cifras, Quindío) no está construido todavía** — hoy
+> solo existe la variante Regional (4 cifras, eje cafetero).
+
+### 7.4.3 El formulario de Baloto y MiLoto
+
+Los números "al azar" de estos dos salen del propio backend de ventas
+(`/baloto/numeros-aleatorios`, `/miloto/numeros-aleatorios`) — es el mismo
+generador que usa la pantalla real, no algo que este servicio inventa.
+
+**Baloto** deja hacer **hasta 5 apuestas** en un mismo tiquete (igual que
+MiLoto), cada una con sus propios 5 números y su propia Superbalota. Revancha
+es distinto: se pregunta **una sola vez para todo el tiquete**, no por
+apuesta — coincide con el backend real (`/baloto/reglas`: el juego principal
+admite hasta 5 "boards", pero el addon Revancha admite máximo 1):
+
+```
+data: {"delta": "¡Listo! Así queda tu Baloto:\n\n• 05, 12, 23, 34, 43 — Superbalota 07\n…"}
+data: {"formulario": {
+  "producto": "baloto",
+  "apuestas": [
+    { "numeros": ["05", "12", "23", "34", "43"], "superbalota": "07" },
+    { "numeros": ["35", "01", "12", "15", "28"], "superbalota": "09" }
+  ],
+  "revancha": true,
+  "valor": 15000
+}}
+data: {"done": true}
+```
+
+| Campo | Qué es |
+|---|---|
+| `apuestas` | **Lista de objetos** — una por cada apuesta (entre 1 y 5) |
+| `apuestas[].numeros` | **Lista de exactamente 5** strings de 2 dígitos, del `"01"` al `"43"`, sin repetir dentro de esa apuesta |
+| `apuestas[].superbalota` | String de 2 dígitos, del `"01"` al `"16"` — propia de esa apuesta |
+| `revancha` | `true`/`false` — aplica a **todo el tiquete**, no a una apuesta en particular |
+| `valor` | `6000 × cantidad de apuestas`, más `3000` si `revancha` es `true`. No lo eligió el usuario, es la suma de precios fijos |
+
+> **Baloto no tiene paso de fecha ni deja comprar para varios sorteos
+> seguidos** — el backend real sí lo soporta (`/baloto/reglas` trae
+> `durations`), pero el flujo guiado replica exactamente lo que ya promete el
+> guion informativo (sección 8): números, superbalota, cuántas apuestas y
+> Revancha. Ofrecer varios sorteos seguidos sería un cambio de alcance, no un
+> ajuste chico.
+
+**MiLoto** deja hacer **hasta 5 apuestas** en un mismo tiquete:
+
+```
+data: {"delta": "¡Listo! Así queda tu MiLoto:\n\n• 03, 09, 15, 27, 39\n• 07, 39, 29, 09, 11\n…"}
+data: {"formulario": {
+  "producto": "miloto",
+  "apuestas": [
+    ["03", "09", "15", "27", "39"],
+    ["07", "39", "29", "09", "11"]
+  ],
+  "valor_por_apuesta": 4000,
+  "valor_total": 8000
+}}
+data: {"done": true}
+```
+
+| Campo | Qué es |
+|---|---|
+| `apuestas` | **Lista de listas** — una por cada apuesta que hizo (entre 1 y 5), cada una con **exactamente 5** strings de 2 dígitos del `"01"` al `"39"`, sin repetir dentro de la misma apuesta (sí pueden repetirse números entre apuestas distintas) |
+| `valor_por_apuesta` | Fijo, `4000` |
+| `valor_total` | `4000 × cantidad de apuestas` |
+
 ### 7.5 Qué pasa si el usuario se sale del guion
 
 Está contemplado, no hay que hacer nada especial:
@@ -553,7 +870,7 @@ registro, resultados).
 
 ## 8. Co-piloto informativo (los demás productos)
 
-Para los **ocho productos que no tienen flujo guiado**, "¿Necesitas ayuda?"
+Para los **cuatro productos que no tienen flujo guiado**, "¿Necesitas ayuda?"
 sigue devolviendo un guion informativo: explica qué hay que decidir, pero **no
 recoge datos ni devuelve un formulario**.
 
@@ -672,29 +989,31 @@ Baloto. **Si el usuario sale del módulo**, simplemente deja de mandar
 | `contexto.modulo` | Producto |
 |---|---|
 | `chance` | ⚠️ **Tiene flujo guiado** — ver sección 7, no aplica aquí |
-| `astro` | Super Astro |
-| `baloto` | Baloto y Revancha |
-| `miloto` | MiLoto |
+| `astro` | ⚠️ **Tiene flujo guiado** — ver sección 7, no aplica aquí |
+| `chance_millonario` | ⚠️ **Tiene flujo guiado** — ver sección 7.4.2, no aplica aquí |
+| `doble_play` | ⚠️ **Tiene flujo guiado** — ver sección 7.4.2, no aplica aquí |
+| `baloto` | ⚠️ **Tiene flujo guiado** — ver sección 7.4.3, no aplica aquí |
+| `miloto` | ⚠️ **Tiene flujo guiado** — ver sección 7.4.3, no aplica aquí |
 | `loteria` | Lotería tradicional (billetes) |
-| `chance_millonario` | Chance Millonario |
-| `recargas` | Recargas de celular |
-| `paquetes` | Paquetes |
-| `recaudos` | Pago de facturas |
+| `recarga` | Recargas de celular |
+| `paquete` | Paquetes |
+| `recaudo` | Pago de facturas |
 | cualquier otro | Saludo genérico, no falla |
 
-Los nueve productos que se venden hoy tienen guion; **Chance además tiene flujo
-guiado**, que tiene prioridad sobre el guion.
+Los diez productos que se venden hoy tienen guion; **seis de ellos además
+tienen flujo guiado** (Chance, Astro, Chance Millonario, Doble Play, Baloto,
+MiLoto — sección 7), que tiene prioridad sobre el guion.
 
 Si el usuario **escribe** (sin pulsar botón) algo como "quiero jugar baloto" o
 "cómo compro un billete", el router lo detecta solo y responde con el mismo
-guion gratis. Con Chance, esa misma detección arranca el flujo de la sección 7.
+guion gratis — o arranca el flujo guiado si el producto lo tiene.
 
 Dos casos donde el router **no** adivina, a propósito:
 
 - Un "cómo juego la lotería" **a secas** va al modelo: mucha gente le dice
   "lotería" a cualquier juego de azar. Hace falta una señal inequívoca
   ("billete", "fracción") o que mandes `contexto.modulo`.
-- **"Recargar" es ambiguo:** recargar el *celular* es `recargas`, recargar el
+- **"Recargar" es ambiguo:** recargar el *celular* es `recarga`, recargar el
   *saldo* de la cuenta es otra cosa.
 
 ### 8.5 El backend también sugiere el botón
@@ -757,9 +1076,18 @@ sugerencia.
 - [ ] **Flujo guiado (sección 7):** guardar el `flujo` que llega y reenviarlo
       en la siguiente petición; dejar de mandarlo cuando no llegue.
 - [ ] Pintar `opciones_flujo` como botones del paso actual.
-- [ ] Con `formulario`, rellenar la pantalla de Chance y dejar que el usuario
-      revise y confirme.
-- [ ] Mapear los **módulos de navegación** a las rutas reales de la web (7 de gestión + 9 de productos).
+- [ ] Con `formulario`, rellenar la pantalla del producto (Chance 7.4, Astro
+      7.4.1, Chance Millonario/Doble Play 7.4.2, Baloto/MiLoto 7.4.3) y dejar
+      que el usuario revise y confirme. Las cuatro formas de `formulario` son
+      distintas entre sí — no asumir que son iguales.
+- [ ] **Los cuatro submenús (secciones 2.1 a 2.4):** "Otras consultas",
+      "Jugar acumulados", "Jugar Baloto o MiLoto" y "Recargas, paquetes y
+      recaudos" se tratan igual que el menú principal — mismo evento
+      `opciones`, mismo mecanismo de números.
+- [ ] **`usos_modelo`:** sumar 1 por cada evento `usage` recibido y mandarlo
+      de vuelta en cada petición. Sin esto el límite de conversación (30
+      respuestas del modelo) nunca se activa — ver nota en la sección 4.
+- [ ] Mapear los **módulos de navegación** a las rutas reales de la web (7 de gestión + 10 de productos, incluido `doble_play`).
 - [ ] Mandar `contexto.modulo` mientras el usuario esté dentro de un producto.
 - [ ] Convertir las negritas de Markdown, escapando el resto del HTML.
 

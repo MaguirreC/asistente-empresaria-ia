@@ -16,7 +16,7 @@ class Contexto(BaseModel):
     módulo de compra (p. ej. Chance), para que el asistente sepa dónde está sin
     que el usuario tenga que decirlo ("aquí", "esta página").
     """
-    modulo: str  # "chance", "baloto", "recargas"... ver CONTRATO_FRONT.md
+    modulo: str  # "chance", "baloto", "recarga"... ver CONTRATO_FRONT.md
 
 
 class EstadoFlujo(BaseModel):
@@ -65,6 +65,18 @@ class ChatRequest(BaseModel):
     # lo seguro (se le ofrece registrarse e iniciar sesión, no datos suyos).
     autenticado: bool = False
 
+    # Cuántas respuestas de ESTA conversación ya invocaron al modelo. El
+    # backend no guarda estado entre peticiones (el historial viaja completo
+    # cada vez), así que no puede mirar `messages` y saber cuáles de esos
+    # turnos costaron tokens y cuáles salieron gratis del router o de un
+    # flujo guiado — un texto se ve igual venga de donde venga. Por eso el
+    # front lo trae de vuelta, igual que ya hace con `flujo`: suma 1 cada vez
+    # que recibe el evento `usage` (que solo llega cuando de verdad se usó el
+    # modelo) y manda el total acá. El límite de mensajes (`session_limit.py`)
+    # se mide sobre esto, no sobre `len(messages)` — así una compra guiada de
+    # varios pasos no cuenta como si fueran preguntas al modelo.
+    usos_modelo: int = 0
+
 
 class OpcionMenu(BaseModel):
     """Una opción rápida del menú inicial.
@@ -84,6 +96,16 @@ class BienvenidaResponse(BaseModel):
     """
     mensaje: str
     opciones: List[OpcionMenu]
+
+    # Aviso corto de tratamiento de datos (Ley 1581 de 2012), con el enlace a
+    # la política completa. Va aparte de `mensaje` a propósito: si se pegara
+    # al texto del saludo, el front lo agregaría al historial como si el
+    # usuario lo hubiera visto en el chat, y el router compara ese texto
+    # contra `menu_texto()` para saber si "1" significa una opción del menú
+    # (ver `es_menu` en app/router.py) — un carácter de diferencia rompería
+    # esa comparación. Al ir en un campo separado, el front lo puede mostrar
+    # como aviso fijo (banner, pie del widget) sin tocar el historial.
+    aviso_tratamiento_datos: str
 
 
 class HealthResponse(BaseModel):

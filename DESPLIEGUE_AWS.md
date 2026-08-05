@@ -445,8 +445,7 @@ se conecta así:
 - **Dominio propio:** App Runner → tu servicio → *Custom domains*. Pide el
   certificado y valida por DNS; App Runner gestiona la renovación.
 - **Restringir `CORS_ORIGINS`** al dominio real del front, si quedó en `*`.
-- **Alarma de costo:** una alarma de facturación en CloudWatch. Bedrock se paga
-  por token y conviene enterarse por una alarma, no por la factura.
+- **Alarma de costo:** ✅ hecho — ver sección 9.
 - **Ojo con el costo en reposo:** App Runner cobra la memoria aprovisionada
   aunque no haya tráfico. Si el asistente va a estar parado mucho tiempo
   (por ejemplo, mientras el front todavía no lo integra), se puede **pausar**
@@ -468,3 +467,163 @@ Es más trabajo y suma costo fijo, pero sigue sin tocar la red de producción.
 Si llegas a ese punto, avísame y armo la guía. Lo hecho hasta aquí se aprovecha
 casi todo: la imagen en ECR y la política de Bedrock se reusan tal cual; solo
 cambia el rol (pasa a ser un *task role* de ECS, con el mismo JSON).
+
+---
+
+## 9. Control de gasto: presupuesto y bloqueo automático (AWS Budgets)
+
+Dos capas: **alertas** (te avisan) y una **acción automática** (corta el
+acceso a Bedrock si el gasto se sale de control). Hecho por consola, sin
+código — todo vive en AWS, no en este repo.
+
+> ⚠️ **La razón de tener las dos capas y no solo alertas:** los datos de costo
+> en AWS Budgets no son en tiempo real (van varias horas atrás), así que esto
+> es una red de seguridad para gasto anómalo *sostenido*, no un tope duro
+> instantáneo. El límite de 30 respuestas por conversación
+> (`app/session_limit.py`) ya cubre el caso más probable (alguien usando el
+> chat como personal) — esto es la protección de fondo para lo que ese límite
+> no alcance a frenar.
+
+### 9.1 La trampa que hay que evitar
+
+El SDK que usa este proyecto (`AnthropicBedrockMantle`) **no llama a
+`bedrock:InvokeModel`**, llama a **`bedrock-mantle:CreateInference`** sobre
+un espacio de nombres de IAM distinto (ver sección 2, y el bug #13 de
+`RESUMEN_SESION.md`). Si la política de bloqueo solo niega
+`bedrock:InvokeModel`, el chat **sigue funcionando y gastando** — falsa
+sensación de seguridad. Hacen falta las dos acciones negadas:
+
+- `bedrock-mantle:CreateInference` → corta el chat (Haiku/Sonnet), el
+  grueso del gasto.
+- `bedrock:InvokeModel` (+ `InvokeModelWithResponseStream`) → corta Titan
+  (embeddings), más chico pero no cero.
+
+### 9.2 Crear la política de bloqueo (IAM)
+
+**IAM → Policies → Create policy → pestaña JSON:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BloquearBedrockPorPresupuesto",
+      "Effect": "Deny",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock-mantle:CreateInference"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Nombre: **`asistente-ia-bedrock-deny`**. El `Resource: "*"` no es un
+problema de alcance: esta política solo se **adjunta** al rol de la
+aplicación (el paso siguiente decide dónde pega, no la política en sí).
+
+### 9.3 Crear el presupuesto con alertas
+
+**Billing and Cost Management → Budgets → Create budget → Customize (advanced):**
+
+| Campo | Valor |
+|---|---|
+| Nombre | `asistente-ia-bedrock-mensual` |
+| Budget type | Cost budget |
+| Period | Monthly, recurring |
+| Budgeted amount | Fixed, **$500** |
+| Scope | **Filter specific AWS cost dimensions** → Dimension `Service`, Includes, Value `Bedrock` |
+
+> **El filtro por servicio importa.** Sin él, el presupuesto cuenta *toda* la
+> factura de AWS (App Runner, DynamoDB, transferencia de datos...), no solo
+> lo que gasta el chat — diluye la señal justo de lo que se quiere vigilar.
+
+**Alertas** (botón *Add alert threshold*, se repite 4 veces): 50%, 80%, 90%
+y 100% del costo real (*Actual*), todas con los mismos destinatarios de
+correo.
+
+### 9.4 Crear el rol que ejecuta la acción
+
+AWS Budgets necesita permiso para adjuntar/quitar la política del rol de la
+app — no lo tiene por defecto. **IAM → Roles → Create role → Custom trust
+policy:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "budgets.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Sin políticas de la lista al crearlo — se agrega una **inline policy**
+después (*Add permissions → Create inline policy → JSON*), acotada al rol y
+la política específicos de este proyecto (reemplaza `<CUENTA>` por el número
+de cuenta de 12 dígitos, **sin** los símbolos `<` `>`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::<CUENTA>:role/asistente-ia-instance-role"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetPolicy",
+        "iam:ListPolicyVersions"
+      ],
+      "Resource": "arn:aws:iam::<CUENTA>:policy/asistente-ia-bedrock-deny"
+    }
+  ]
+}
+```
+
+Nombre del rol: **`asistente-ia-budgets-action-role`**.
+
+### 9.5 Conectar todo: la acción en el Alert #4 (100%)
+
+De vuelta en el presupuesto (o al crearlo, en el paso de alertas), en el
+**Alert de 100%** → **Add action**:
+
+| Campo | Valor |
+|---|---|
+| Select IAM role | `asistente-ia-budgets-action-role` (el de 9.4) |
+| Action type | IAM Policy |
+| Select an existing IAM Policy | `asistente-ia-bedrock-deny` (el de 9.2) |
+| Aplicar a (user/group/role) | `asistente-ia-instance-role` — **el rol de la app**, no el de Budgets |
+
+**No adjuntar acciones a los alerts de 50/80/90%** — esos son solo aviso por
+correo, sin acción automática. Solo el de 100% ejecuta el bloqueo.
+
+*Create budget* para terminar.
+
+### 9.6 Qué pasa cuando se dispara, y cómo revertir
+
+Bedrock empieza a rechazar las llamadas. El código ya lo maneja sin
+romperse: `app/bedrock.py` captura el error y responde con un mensaje de
+"tuvimos un inconveniente" en vez de tumbar el stream (ver `BedrockError` en
+`app/main.py`).
+
+**Lo que NO se cae:** el menú, los flujos guiados (Chance, Astro, Chance
+Millonario, Doble Play, Baloto, MiLoto), loterías y acumulados en vivo — todo
+eso es gratis, no toca Bedrock. Solo se corta la parte que de verdad cuesta.
+
+**Para revertir manualmente:** IAM → Roles → `asistente-ia-instance-role` →
+Permissions → quitar la política `asistente-ia-bedrock-deny`. El presupuesto
+mensual se reinicia solo al empezar el mes siguiente; la acción no se
+revierte sola a mitad de mes.

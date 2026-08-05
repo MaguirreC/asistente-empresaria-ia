@@ -6,9 +6,10 @@ Fuente: chancemillonario.com (sitio oficial del producto).
 
 Chance Millonario es una **modalidad de chance de doble acierto**, con
 **premio acumulado de cuatro cifras**. Es el mismo tipo de juego que
-"Doble Play" (ver `otras-modalidades.md`): el resultado se cruza con las
-**cuatro cifras del premio mayor** de la última lotería o sorteo que juegue
-ese día.
+"Doble Play" (ver `otras-modalidades.md`) y se juega igual: el apostador
+**elige 2 loterías** de las que juegan ese día y **5 números de 4 cifras**,
+con la expectativa de que 2 de esos números coincidan con el resultado de
+las loterías elegidas.
 
 ## Precio
 

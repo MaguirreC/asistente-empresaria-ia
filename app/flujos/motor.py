@@ -17,11 +17,40 @@ podría desincronizarse de los datos, y esa clase de bug no existe si el paso
 es una función pura de lo recogido.
 """
 import logging
+import random
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Callable
 
 logger = logging.getLogger(__name__)
+
+
+def formatear_pesos(valor: int) -> str:
+    return f"${valor:,.0f}".replace(",", ".")
+
+
+def sin_tildes(texto: str) -> str:
+    plano = unicodedata.normalize("NFD", texto)
+    return "".join(c for c in plano if unicodedata.category(c) != "Mn")
+
+
+# Formas de pedir que el sistema elija un número por el usuario, en vez de
+# escribirlo. Común a cualquier receta que pida un número (Chance, Astro...).
+_PIDE_ALEATORIO = re.compile(
+    r"\b(aleatori\w*|azar|random|sorpres\w*|sorprend\w*|cualquier\w*|"
+    r"(elig\w*|escog\w*)\s+(tu|usted|por\s+mi|por\s+ti))\b",
+    re.IGNORECASE,
+)
+
+
+def pide_aleatorio(texto: str) -> bool:
+    return bool(_PIDE_ALEATORIO.search(sin_tildes(texto)))
+
+
+def numero_aleatorio(cifras: int) -> str:
+    """Un número de `cifras` dígitos, con ceros a la izquierda si hace falta."""
+    return f"{random.randint(0, 10 ** cifras - 1):0{cifras}d}"
 
 
 class FlujoNoDisponible(Exception):
@@ -152,6 +181,88 @@ def elegir_de(texto: str, pares: list[tuple[str, object]]) -> object | None:
         if plano in etiqueta or etiqueta in plano
     ]
     return coincidencias[0] if len(coincidencias) == 1 else None
+
+
+# --- Elegir una lotería de una lista larga, agrupando por jornada ---------
+#
+# Nació en chance.py y ahora la usan también chance_millonario.py y
+# doble_play.py: un día cualquiera trae entre 14 y 25 loterías, y listarlas
+# todas de una sería un muro de botones. Se agrupa por la HORA DE CIERRE real
+# y no por el nombre: hay loterías sin jornada en el nombre (SAMAN, CRUZ ROJA)
+# y otras que la contradicen (PAISITA NOCHE cierra 5:45 p.m.).
+
+# (etiqueta, desde, hasta) en horas. `None` es sin límite por ese lado.
+JORNADAS: tuple[tuple[str, int | None, int | None], ...] = (
+    ("Mañana", None, 12),
+    ("Mediodía", 12, 14),
+    ("Tarde", 14, 18),
+    ("Noche", 18, None),
+)
+
+# Por debajo de esto no vale la pena preguntar la jornada: se listan todas y se
+# ahorra un paso.
+MAXIMO_SIN_AGRUPAR = 8
+
+
+def de_la_jornada(loterias: list, jornada: str | None) -> list:
+    if jornada is None:
+        return list(loterias)
+    desde, hasta = next((d, h) for e, d, h in JORNADAS if e == jornada)
+    return [
+        l
+        for l in loterias
+        if l.hora is not None
+        and (desde is None or l.hora.hour >= desde)
+        and (hasta is None or l.hora.hour < hasta)
+    ]
+
+
+def paso_jornada(loterias: list, id: str = "jornada") -> Paso:
+    pares = []
+    for etiqueta, _, _ in JORNADAS:
+        del_grupo = de_la_jornada(loterias, etiqueta)
+        if not del_grupo:
+            continue  # nada abierto en esa franja: no se ofrece
+        primera, ultima = del_grupo[0].hora_texto, del_grupo[-1].hora_texto
+        rango = primera if len(del_grupo) == 1 else f"{primera} a {ultima}"
+        pares.append((f"{etiqueta} — {len(del_grupo)} loterías, cierran {rango}", etiqueta))
+
+    return Paso(
+        id=id,
+        pregunta=f"Hay {len(loterias)} loterías disponibles. ¿A qué hora quieres jugar?",
+        opciones=tuple(etiqueta for etiqueta, _ in pares),
+        interpretar=lambda texto: elegir_de(texto, pares),
+        ayuda="Elige una franja de la lista, o responde con su número.",
+    )
+
+
+def paso_loteria(loterias: list, jornada: str | None, pregunta: str, id: str = "loteria") -> Paso:
+    del_grupo = de_la_jornada(loterias, jornada)
+    # La hora de cierre va en la etiqueta: es justo lo que el usuario necesita
+    # para decidir, y evita que elija una que cierra en cinco minutos.
+    #
+    # Lo que se guarda NO es el nombre sino la identidad completa que devuelve
+    # el backend. Así el front arma la compra por código y no tiene que casar
+    # nombres a mano — que además vienen en mayúsculas y sin tildes normalizar.
+    pares = [
+        (
+            f"{l.nombre} — cierra {l.hora_texto}",
+            {
+                "codigo": l.codigo,
+                "id": l.id_,
+                "nombre": l.nombre,
+                "nombreCorto": l.nombre_corto,
+            },
+        )
+        for l in del_grupo
+    ]
+    return Paso(
+        id=id,
+        pregunta=pregunta,
+        opciones=tuple(etiqueta for etiqueta, _ in pares),
+        interpretar=lambda texto: elegir_de(texto, pares),
+        ayuda="No encontré esa lotería en la lista. Elige una, o responde con su número.",
+    )
 
 
 def _pregunta_con_opciones(paso: Paso) -> str:

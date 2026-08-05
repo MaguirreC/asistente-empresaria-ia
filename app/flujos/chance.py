@@ -16,7 +16,19 @@ cita el Decreto 1350 de 2003. Si cambian allá, hay que cambiarlos aquí.
 import re
 from datetime import datetime, timedelta
 
-from app.flujos.motor import Flujo, FlujoNoDisponible, Paso, elegir_de, registrar
+from app.flujos.motor import (
+    MAXIMO_SIN_AGRUPAR,
+    Flujo,
+    FlujoNoDisponible,
+    Paso,
+    elegir_de,
+    formatear_pesos,
+    numero_aleatorio,
+    paso_jornada,
+    paso_loteria,
+    pide_aleatorio,
+    registrar,
+)
 from app.tools.loterias import BOGOTA, loterias_para_fecha
 
 # Cuántos días hacia adelante deja elegir la pantalla (hoy + 6).
@@ -40,10 +52,6 @@ _MODALIDADES: dict[str, tuple[str, int, int]] = {
     "pata": ("Pata", 50, 50),
     "una": ("Uña", 5, 5),
 }
-
-
-def _pesos(valor: int) -> str:
-    return f"${valor:,.0f}".replace(",", ".")
 
 
 # --- Paso 1: la fecha -----------------------------------------------------
@@ -76,21 +84,8 @@ def _paso_fecha() -> Paso:
 #
 # Un día cualquiera trae ~25 loterías. Listarlas todas en un chat es un muro de
 # texto y 25 botones, así que primero se pregunta la jornada y después solo las
-# de esa franja. Se agrupa por la HORA DE CIERRE real y no por el nombre: hay
-# loterías sin jornada en el nombre (SAMAN, CRUZ ROJA, PIJAO DE ORO) y otras
-# que la contradicen (PAISITA NOCHE cierra a las 5:45 p.m.).
-
-# (etiqueta, desde, hasta) en horas. `None` es sin límite por ese lado.
-_JORNADAS: tuple[tuple[str, int | None, int | None], ...] = (
-    ("Mañana", None, 12),
-    ("Mediodía", 12, 14),
-    ("Tarde", 14, 18),
-    ("Noche", 18, None),
-)
-
-# Por debajo de esto no vale la pena preguntar la jornada: se listan todas y se
-# ahorra un paso.
-_MAXIMO_SIN_AGRUPAR = 8
+# de esa franja. El agrupado por jornada vive en `motor.py` — lo comparten
+# también chance_millonario.py y doble_play.py.
 
 
 def _consultar(fecha: str) -> list[tuple]:
@@ -113,69 +108,6 @@ def _consultar(fecha: str) -> list[tuple]:
     return loterias
 
 
-def _de_la_jornada(loterias: list[tuple], jornada: str | None) -> list[tuple]:
-    if jornada is None:
-        return loterias
-    desde, hasta = next((d, h) for e, d, h in _JORNADAS if e == jornada)
-    return [
-        l
-        for l in loterias
-        if l.hora is not None
-        and (desde is None or l.hora.hour >= desde)
-        and (hasta is None or l.hora.hour < hasta)
-    ]
-
-
-def _paso_jornada(loterias: list[tuple]) -> Paso:
-    pares = []
-    for etiqueta, _, _ in _JORNADAS:
-        del_grupo = _de_la_jornada(loterias, etiqueta)
-        if not del_grupo:
-            continue  # nada abierto en esa franja: no se ofrece
-        primera, ultima = del_grupo[0].hora_texto, del_grupo[-1].hora_texto
-        rango = primera if len(del_grupo) == 1 else f"{primera} a {ultima}"
-        pares.append((f"{etiqueta} — {len(del_grupo)} loterías, cierran {rango}", etiqueta))
-
-    return Paso(
-        id="jornada",
-        pregunta=(
-            f"Hay {len(loterias)} loterías disponibles. ¿A qué hora quieres jugar?"
-        ),
-        opciones=tuple(etiqueta for etiqueta, _ in pares),
-        interpretar=lambda texto: elegir_de(texto, pares),
-        ayuda="Elige una franja de la lista, o responde con su número.",
-    )
-
-
-def _paso_loteria(loterias: list[tuple], jornada: str | None) -> Paso:
-    del_grupo = _de_la_jornada(loterias, jornada)
-    # La hora de cierre va en la etiqueta: es justo lo que el usuario necesita
-    # para decidir, y evita que elija una que cierra en cinco minutos.
-    #
-    # Lo que se guarda NO es el nombre sino la identidad completa que devuelve
-    # el backend. Así el front arma la compra por código y no tiene que casar
-    # nombres a mano — que además vienen en mayúsculas y sin tildes normalizar.
-    pares = [
-        (
-            f"{l.nombre} — cierra {l.hora_texto}",
-            {
-                "codigo": l.codigo,
-                "id": l.id_,
-                "nombre": l.nombre,
-                "nombreCorto": l.nombre_corto,
-            },
-        )
-        for l in del_grupo
-    ]
-    return Paso(
-        id="loteria",
-        pregunta="¿Con qué lotería quieres jugar?",
-        opciones=tuple(etiqueta for etiqueta, _ in pares),
-        interpretar=lambda texto: elegir_de(texto, pares),
-        ayuda="No encontré esa lotería en la lista. Elige una, o responde con su número.",
-    )
-
-
 # --- Paso 3: el número ----------------------------------------------------
 
 _SOLO_DIGITOS = re.compile(r"\D")
@@ -183,7 +115,13 @@ _SOLO_DIGITOS = re.compile(r"\D")
 
 def _interpretar_numero(texto: str) -> str | None:
     digitos = _SOLO_DIGITOS.sub("", texto)
-    return digitos if len(digitos) in (3, 4) else None
+    if len(digitos) in (3, 4):
+        return digitos
+    # El número que sale al azar es siempre de 4 cifras: es la opción más
+    # completa (paga más y cubre también los premios por coincidencia parcial).
+    if texto.strip() == "1" or pide_aleatorio(texto):
+        return numero_aleatorio(4)
+    return None
 
 
 def _paso_numero() -> Paso:
@@ -192,10 +130,12 @@ def _paso_numero() -> Paso:
         pregunta=(
             "¿A qué número quieres jugar?\n\n"
             "Puede ser de **4 cifras** (0000 a 9999) o de **3 cifras** "
-            "(000 a 999). Con 3 cifras, si ganas recibes un 80% adicional."
+            "(000 a 999). Con 3 cifras, si ganas recibes un 80% adicional.\n\n"
+            "O si prefieres, elijo uno al azar por ti."
         ),
+        opciones=("Elegir un número al azar 🎲",),
         interpretar=_interpretar_numero,
-        ayuda="Necesito un número de 3 o 4 cifras. Por ejemplo: 1234, o 567.",
+        ayuda="Necesito un número de 3 o 4 cifras. Por ejemplo: 1234, o 567. También puedes pedirme uno al azar.",
     )
 
 
@@ -228,7 +168,7 @@ def _paso_modalidades(numero: str) -> Paso:
     cifras = len(numero)
     indice = 1 if cifras == 3 else 2
     lineas = "\n".join(
-        f"• **{_MODALIDADES[c][0]}** — paga {_pesos(_MODALIDADES[c][indice])} "
+        f"• **{_MODALIDADES[c][0]}** — paga {formatear_pesos(_MODALIDADES[c][indice])} "
         f"por cada peso apostado"
         for c in _MODALIDADES
     )
@@ -285,9 +225,9 @@ def _paso_valor(clave: str, datos: dict) -> Paso:
 
     if es_la_ultima and ya_puesto < MINIMO_COLILLA:
         ayuda = (
-            f"El mínimo por colilla es {_pesos(MINIMO_COLILLA)} sumando todo. "
-            f"Llevas {_pesos(ya_puesto)}, así que aquí necesito al menos "
-            f"{_pesos(MINIMO_COLILLA - ya_puesto)}."
+            f"El mínimo por colilla es {formatear_pesos(MINIMO_COLILLA)} sumando todo. "
+            f"Llevas {formatear_pesos(ya_puesto)}, así que aquí necesito al menos "
+            f"{formatear_pesos(MINIMO_COLILLA - ya_puesto)}."
         )
     else:
         ayuda = "Dime un valor en pesos. Por ejemplo: 1000."
@@ -296,7 +236,7 @@ def _paso_valor(clave: str, datos: dict) -> Paso:
         id=f"valor_{clave}",
         pregunta=(
             f"¿Cuánto quieres apostar en **{etiqueta}**?\n\n"
-            f"Paga {_pesos(paga)} por cada peso."
+            f"Paga {formatear_pesos(paga)} por cada peso."
         ),
         interpretar=lambda texto: _interpretar_valor(texto, not es_la_ultima, ya_puesto),
         ayuda=ayuda,
@@ -314,10 +254,12 @@ def _siguiente_paso(datos: dict) -> Paso | None:
         loterias = _consultar(datos["fecha"])
         # La jornada solo se pregunta cuando hay demasiadas para listarlas de
         # una. Si son pocas, ese paso no existe y `jornada` nunca entra a los
-        # datos: `_paso_loteria` lo interpreta como "todas".
-        if len(loterias) > _MAXIMO_SIN_AGRUPAR and "jornada" not in datos:
-            return _paso_jornada(loterias)
-        return _paso_loteria(loterias, datos.get("jornada"))
+        # datos: `motor.paso_loteria` lo interpreta como "todas".
+        if len(loterias) > MAXIMO_SIN_AGRUPAR and "jornada" not in datos:
+            return paso_jornada(loterias)
+        return paso_loteria(
+            loterias, datos.get("jornada"), pregunta="¿Con qué lotería quieres jugar?"
+        )
 
     if "numero" not in datos:
         return _paso_numero()
@@ -344,7 +286,7 @@ def _formulario(datos: dict) -> dict:
 
 def _resumen(datos: dict) -> str:
     detalle = "\n".join(
-        f"• {_MODALIDADES[c][0]}: {_pesos(datos[f'valor_{c}'])}"
+        f"• {_MODALIDADES[c][0]}: {formatear_pesos(datos[f'valor_{c}'])}"
         for c in datos["modalidades"]
     )
     total = sum(datos[f"valor_{c}"] for c in datos["modalidades"])
@@ -354,7 +296,7 @@ def _resumen(datos: dict) -> str:
         f"• **Lotería:** {datos['loteria']['nombre']}\n"
         f"• **Número:** {datos['numero']}\n"
         f"{detalle}\n"
-        f"• **Total:** {_pesos(total)}\n\n"
+        f"• **Total:** {formatear_pesos(total)}\n\n"
         "Te lo dejo cargado en la pantalla de Chance para que lo revises y "
         "confirmes la compra. 👇"
     )

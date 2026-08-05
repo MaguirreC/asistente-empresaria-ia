@@ -11,9 +11,11 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import analitica, flujos
 from app.bedrock import BedrockError, stream_chat
@@ -21,7 +23,13 @@ from app.config import settings
 from app.embeddings import documentos_de_la_ultima_consulta, precalentar
 from app.router import (
     ACCION_AYUDA_COMPRA,
+    ACCION_JUGAR_ASTRO,
+    ACCION_JUGAR_BALOTO,
     ACCION_JUGAR_CHANCE,
+    ACCION_JUGAR_CHANCE_MILLONARIO,
+    ACCION_JUGAR_DOBLE_PLAY,
+    ACCION_JUGAR_MILOTO,
+    AVISO_TRATAMIENTO_DATOS,
     MENSAJE_REQUIERE_SESION,
     accion_de_menu,
     destino_navegacion,
@@ -30,9 +38,11 @@ from app.router import (
     es_menu,
     menu_texto,
     opciones_menu,
+    opciones_submenu,
     producto_pedido,
     resolver_accion,
     resolver_texto,
+    submenu_de,
     tiene_guion_ayuda_compra,
 )
 from app.schemas import BienvenidaResponse, ChatRequest, HealthResponse
@@ -96,6 +106,46 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(StarletteHTTPException)
+async def manejador_http_exception(request: Request, exc: StarletteHTTPException):
+    """Registra en el log CUALQUIER error HTTP antes de devolverlo al cliente.
+
+    Sin esto, un 400/401/404 no deja rastro en el log de la aplicación: solo
+    aparece la línea de acceso de uvicorn (método, ruta y código), sin el
+    detalle de qué pasó ni desde qué IP — que es justo lo que hace falta para
+    diagnosticar un error reportado en producción sin poder reproducirlo.
+    """
+    logger.warning(
+        "%s en %s %s: %s (cliente=%s)",
+        exc.status_code,
+        request.method,
+        request.url.path,
+        exc.detail,
+        request.client.host if request.client else "?",
+    )
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def manejador_error_validacion(request: Request, exc: RequestValidationError):
+    """Igual que el manejador anterior, pero para el 422 que dispara FastAPI
+    cuando el body no cumple el esquema (falta un campo, un tipo equivocado,
+    JSON mal formado...). Se loguea el body crudo para poder ver exactamente
+    qué mandó el front, ya que `exc.errors()` solo dice qué campo falló, no
+    qué se recibió.
+    """
+    body = await request.body()
+    logger.warning(
+        "422 en %s %s: %s (cliente=%s) body=%s",
+        request.method,
+        request.url.path,
+        exc.errors(),
+        request.client.host if request.client else "?",
+        body[:2000],
+    )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
 
 
@@ -130,7 +180,9 @@ def bienvenida(autenticado: bool = False):
     No invoca al modelo: el saludo y el menú salen del código.
     """
     return BienvenidaResponse(
-        mensaje=menu_texto(autenticado), opciones=opciones_menu(autenticado)
+        mensaje=menu_texto(autenticado),
+        opciones=opciones_menu(autenticado),
+        aviso_tratamiento_datos=AVISO_TRATAMIENTO_DATOS,
     )
 
 
@@ -190,21 +242,31 @@ def _para_el_modelo(messages: list) -> list:
       pregunta real al elegir documentos;
     - si quedara de primero rompería la llamada: la API exige que la
       conversación empiece con un mensaje del usuario.
+
+    Aplica igual a cualquier submenú (Otras consultas, Jugar acumulados...):
+    tampoco le sirven al modelo.
     """
-    return [m for m in messages if not (m.role == "assistant" and es_menu(m.content))]
+    return [
+        m for m in messages
+        if not (m.role == "assistant" and (es_menu(m.content) or submenu_de(m.content)))
+    ]
 
 
 def _opciones_si_es_menu(respuesta: str, autenticado: bool):
-    """Manda los botones junto al menú, venga de donde venga.
+    """Manda los botones junto al menú (o el submenú que corresponda).
 
     El menú se puede pedir de tres formas (botón "Menú", escribir "menú", o un
     saludo). En las tres el usuario debe ver lo mismo que al abrir el widget,
     así que las opciones viajan con el texto en vez de que el front tenga que
-    acordarse de volver a pintarlas.
+    acordarse de volver a pintarlas. Mismo trato para cualquier submenú.
     """
-    if respuesta != menu_texto(autenticado):
-        return
-    opciones = opciones_menu(autenticado)
+    if respuesta == menu_texto(autenticado):
+        opciones = opciones_menu(autenticado)
+    else:
+        id_submenu = submenu_de(respuesta)
+        if id_submenu is None:
+            return
+        opciones = opciones_submenu(id_submenu)
     yield f"data: {json.dumps({'opciones': opciones}, ensure_ascii=False)}\n\n"
 
 
@@ -237,6 +299,19 @@ def _eventos_flujo(avance: "flujos.Avance"):
         yield f"data: {json.dumps({'formulario': avance.formulario}, ensure_ascii=False)}\n\n"
 
 
+# Acción del menú/submenú -> producto que arranca. Un diccionario en vez de
+# una cadena de if/elif: agregar el botón de un producto nuevo (cuando ya
+# tiene flujo guiado) es agregar una entrada aquí, no una rama más.
+_ACCION_A_PRODUCTO: dict[str, str] = {
+    ACCION_JUGAR_CHANCE: "chance",
+    ACCION_JUGAR_ASTRO: "astro",
+    ACCION_JUGAR_CHANCE_MILLONARIO: "chance_millonario",
+    ACCION_JUGAR_DOBLE_PLAY: "doble_play",
+    ACCION_JUGAR_BALOTO: "baloto",
+    ACCION_JUGAR_MILOTO: "miloto",
+}
+
+
 def _producto_a_iniciar(
     accion: str | None, modulo: str | None, texto: str
 ) -> str | None:
@@ -246,8 +321,8 @@ def _producto_a_iniciar(
     "¿Necesitas ayuda?" dentro del módulo, y escribirlo ("quiero hacer un
     chance"). Devuelve None si no hay flujo para lo que se pidió.
     """
-    if accion == ACCION_JUGAR_CHANCE:
-        producto = "chance"
+    if accion in _ACCION_A_PRODUCTO:
+        producto = _ACCION_A_PRODUCTO[accion]
     elif accion == ACCION_AYUDA_COMPRA:
         producto = modulo
     elif accion:
@@ -285,18 +360,59 @@ def chat(request: ChatRequest):
       {"error": "mensaje"}        -> ocurrió un problema
       {"done": true}              -> fin de la respuesta
     """
+    # El contrato asume que `messages[-1]` es lo que el usuario acaba de
+    # escribir (CONTRATO_FRONT.md § 4) — todo el router lo trata como tal sin
+    # volver a comprobarlo. Si el front manda el historial sin agregar el
+    # turno del usuario, ese último mensaje queda siendo el saludo o el menú
+    # del propio asistente, y el router lo interpreta como si fuera lo que
+    # pidió el usuario: ya pasó, y el síntoma fue una sugerencia de
+    # navegación rarísima ("Ver acumulados" sugiriendo ir a "saldo", porque
+    # el texto del menú menciona "recargo saldo"). Mejor cortar acá con un
+    # error claro que dejar que el router adivine sobre el mensaje equivocado.
+    if request.messages[-1].role != "user":
+        # Sin este log, un 400 en producción no dice nada más que el código de
+        # estado: no hay forma de saber qué mandó el front para reproducirlo.
+        # Se registran los roles (no el contenido completo) porque alcanza
+        # para diagnosticar el caso y no repite en el log lo que ya se ve en
+        # el `detail` de la respuesta.
+        logger.warning(
+            "400 en /chat: el último mensaje no es del usuario. "
+            "roles=%s ultimo_role=%s accion=%s modulo=%s autenticado=%s",
+            [m.role for m in request.messages],
+            request.messages[-1].role,
+            request.action,
+            request.contexto.modulo if request.contexto else None,
+            request.autenticado,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "El último mensaje de 'messages' debe ser del usuario "
+                "(role: 'user'). Agrega el mensaje del usuario al historial "
+                "antes de mandarlo — ver CONTRATO_FRONT.md sección 4."
+            ),
+        )
 
     def event_stream():
         # Se va llevando para registrarlo al final, cuando el usuario ya tiene
         # su respuesta. Ver el bloque `finally`.
         registro: dict = {"pregunta": "", "respuesta": "", "origen": "modelo"}
 
+        # Separado de `registro`: ese dict se manda tal cual a
+        # `analitica.registrar(**registro)`, que no tiene un parámetro
+        # `destino`. Queda en None salvo que el turno termine ofreciendo un
+        # `navegacion` — se loguea aparte (ver `finally`) para poder ver en
+        # los logs del servidor, sin depender de que la analítica de DynamoDB
+        # esté configurada, decisiones como "a este mensaje le ofrecí ir a
+        # saldo" — es justo lo que hace falta para depurar el bug de hoy.
+        destino = None
+
         try:
             # Antes que nada, por si la conversación ya es demasiado larga.
-            if excede_limite(request.messages):
+            if excede_limite(request.usos_modelo):
                 logger.warning(
-                    "Conversación cortada por límite de mensajes (%s mensajes)",
-                    len(request.messages),
+                    "Conversación cortada por límite de respuestas del modelo (%s)",
+                    request.usos_modelo,
                 )
                 yield f"data: {json.dumps({'delta': MENSAJE_LIMITE_ALCANZADO}, ensure_ascii=False)}\n\n"
                 return
@@ -367,12 +483,13 @@ def chat(request: ChatRequest):
                 # pregunta, y se ofrecen las dos puertas: entrar o registrarse.
                 if producto and not request.autenticado:
                     logger.info("Flujo de %s pedido sin sesión iniciada", producto)
+                    destino = destinos_de_sesion()
                     registro.update(
                         respuesta=MENSAJE_REQUIERE_SESION, origen="router", accion=accion
                     )
                     yield f"data: {json.dumps({'delta': MENSAJE_REQUIERE_SESION}, ensure_ascii=False)}\n\n"
-                    for destino in destinos_de_sesion():
-                        yield from _navegacion(destino)
+                    for puerta in destino:
+                        yield from _navegacion(puerta)
                     return
 
                 if producto:
@@ -455,6 +572,21 @@ def chat(request: ChatRequest):
             yield f"data: {json.dumps({'error': mensaje}, ensure_ascii=False)}\n\n"
         finally:
             yield f"data: {json.dumps({'done': True})}\n\n"
+
+            # Log de cada turno completo: pregunta, respuesta y a dónde se
+            # sugirió navegar (si acaso). Va al log del servidor (CloudWatch
+            # en producción), no depende de que la analítica de DynamoDB esté
+            # configurada — sirve para depurar en caliente qué decidió el
+            # router sin tener que reproducirlo aparte.
+            if registro.get("pregunta"):
+                logger.info(
+                    "TURNO pregunta=%r respuesta=%r accion=%s modulo=%s destino=%s",
+                    registro.get("pregunta"),
+                    registro.get("respuesta"),
+                    registro.get("accion"),
+                    registro.get("modulo"),
+                    destino,
+                )
 
             # Se registra DESPUÉS del `done`: el usuario ya tiene la respuesta
             # completa, así que nada de esto le agrega espera. Y `registrar`
