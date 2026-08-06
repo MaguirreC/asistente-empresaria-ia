@@ -108,6 +108,24 @@ class BienvenidaResponse(BaseModel):
     aviso_tratamiento_datos: str
 
 
+class DocumentoResumen(BaseModel):
+    """Un documento de la base de conocimiento, como aparece en el listado
+    del panel administrativo — sin el contenido, para que listar sea liviano."""
+    nombre: str
+    bytes: int
+
+
+class DocumentoConocimiento(BaseModel):
+    """Un documento completo, para verlo o editarlo en el panel."""
+    nombre: str
+    contenido: str
+
+
+class GuardarDocumentoRequest(BaseModel):
+    """Cuerpo del PUT que crea o actualiza un documento."""
+    contenido: str
+
+
 class HealthResponse(BaseModel):
     status: str
     model: str

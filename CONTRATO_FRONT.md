@@ -358,12 +358,12 @@ suyas propias).
 | `ayuda_paquetes` | Guion informativo de Paquetes, directo → además navega a `paquete` |
 | `ayuda_recaudos` | Guion informativo de Recaudos, directo → además navega a `recaudo` |
 | `registro` | Cómo registrarse → navega a `registro` |
-| `ver_saldo` | Dónde ver el saldo → navega a `saldo` *(solo con sesión)* |
+| `ver_saldo` | Dónde ver el saldo → navega a `perfil`, con etiqueta "Ir a mi saldo" *(solo con sesión)* |
 | `mis_compras` | Dónde ver las compras → navega a `historial` *(solo con sesión)* |
 | `loterias_hoy` | Loterías y horarios de hoy (dato en vivo) |
 | `acumulados` | Acumulados vigentes (dato en vivo) |
 | `premios` | Cómo reclamar un premio → navega a `resultados` (dentro del submenú) |
-| `recargar` | Cómo recargar saldo → navega a `saldo` |
+| `recargar` | Cómo recargar saldo → navega a `perfil`, con etiqueta "Ir a mi saldo" |
 | `problema_compra` | Problemas con una compra → navega a `historial` (dentro del submenú) |
 | `contacto` | Contacto y PQRS → navega a `pqrs` (dentro del submenú) |
 | `ayuda_compra` | Con `modulo` en `"chance"`, `"astro"`, `"chance_millonario"`, `"doble_play"`, `"baloto"` o `"miloto"` arranca el flujo guiado (sección 7); con cualquier otro producto, el guion informativo (sección 8) |
@@ -496,10 +496,18 @@ data: {"done": true}
 | `registro` | Crear mi cuenta | preguntan cómo registrarse *(solo anónimos)* |
 | `ingreso` | Iniciar sesión | un **anónimo** pide su saldo, historial o perfil |
 | `pqrs` | Ir a radicar mi PQRS | preguntan por PQRS, quejas o reclamos |
-| `saldo` | Ir a mi saldo | preguntan por su saldo o cómo recargarlo |
+| `perfil` | Ir a mi saldo | preguntan por su saldo o cómo recargarlo |
 | `resultados` | Ver resultados | preguntan por resultados o si ganaron |
 | `historial` | Ver mi historial de compras | preguntan por sus compras |
 | `perfil` | Ir a mi perfil | preguntan por cambiar correo, celular o datos |
+
+> ⚠️ **`perfil` aparece dos veces a propósito, con `etiqueta` distinta.** El
+> front no tiene una pantalla propia de "saldo" — el saldo se ve en el
+> header de la página y se recarga desde el módulo `perfil` (confirmado con
+> el equipo de front). Por eso preguntar por saldo y preguntar por datos del
+> perfil navegan al **mismo módulo**, pero el backend manda una `etiqueta`
+> distinta según la intención ("Ir a mi saldo" vs. "Ir a mi perfil") para
+> que el botón diga lo que el usuario realmente pidió.
 
 **Pantallas de compra**, cuando el usuario pregunta por un producto:
 
@@ -1038,6 +1046,12 @@ veces seguidas).
 **Qué hacer:** mostrar un botón con el texto de `etiqueta`. Si lo pulsan,
 mandar un `POST /chat` con `action` y `contexto` **tal cual vienen** en la
 sugerencia.
+
+> **`etiqueta` cambia según el producto — no la hardcodees.** Para los seis
+> juegos (Chance, Astro, Baloto, MiLoto, Chance Millonario, Doble Play) dice
+> *"¿Quieres que te ayude a hacer tu apuesta?"*. Para los trámites que **no**
+> son apuestas (`recarga`, `paquete`, `recaudo`) dice *"¿Quieres que te ayude
+> con este trámite?"*. Pinta siempre el texto que llega en `etiqueta`.
 
 ---
 

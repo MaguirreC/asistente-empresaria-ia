@@ -17,10 +17,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from app import analitica, flujos
 from app.bedrock import BedrockError, stream_chat
 from app.config import settings
 from app.embeddings import documentos_de_la_ultima_consulta, precalentar
+from app.knowledge_loader import (
+    DocumentoNoExiste,
+    escribir_documento_admin,
+    leer_documento_admin,
+    listar_documentos_admin,
+)
 from app.router import (
     ACCION_AYUDA_COMPRA,
     ACCION_JUGAR_ASTRO,
@@ -36,6 +44,7 @@ from app.router import (
     destinos_de_sesion,
     es_guion_ayuda_compra,
     es_menu,
+    etiqueta_ayuda_compra,
     menu_texto,
     opciones_menu,
     opciones_submenu,
@@ -45,7 +54,14 @@ from app.router import (
     submenu_de,
     tiene_guion_ayuda_compra,
 )
-from app.schemas import BienvenidaResponse, ChatRequest, HealthResponse
+from app.schemas import (
+    BienvenidaResponse,
+    ChatRequest,
+    DocumentoConocimiento,
+    DocumentoResumen,
+    GuardarDocumentoRequest,
+    HealthResponse,
+)
 from app.session_limit import MENSAJE_LIMITE_ALCANZADO, excede_limite
 
 logging.basicConfig(
@@ -101,7 +117,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -186,6 +202,37 @@ def bienvenida(autenticado: bool = False):
     )
 
 
+def _verificar_admin_key(x_admin_key: str) -> None:
+    """Puerta de entrada común a todo `/admin/*` y `/analitica/*`.
+
+    Si no hay clave configurada en el servidor, el endpoint que llama queda
+    deshabilitado a propósito: es preferible que el panel no funcione a que
+    estos datos (o la edición de la base de conocimiento) queden abiertos por
+    un descuido de configuración.
+    """
+    if not settings.admin_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="El panel administrativo no está habilitado: falta configurar ADMIN_API_KEY.",
+        )
+    # `compare_digest` en vez de `==` para no filtrar la clave por el tiempo
+    # que tarda la comparación.
+    if not secrets.compare_digest(x_admin_key, settings.admin_api_key):
+        raise HTTPException(status_code=401, detail="Clave de administración inválida.")
+
+
+def _verificar_knowledge_s3() -> None:
+    """La edición de la base de conocimiento exige que exista el bucket."""
+    if not settings.knowledge_s3_bucket:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "La edición de la base de conocimiento no está habilitada: "
+                "falta configurar KNOWLEDGE_S3_BUCKET."
+            ),
+        )
+
+
 @app.get("/analitica/resumen")
 def analitica_resumen(dias: int = 7, x_admin_key: str = Header(default="")):
     """Métricas de uso para el panel administrativo.
@@ -193,23 +240,67 @@ def analitica_resumen(dias: int = 7, x_admin_key: str = Header(default="")):
     **Protegido:** expone las preguntas que escribieron los usuarios, así que
     no puede quedar abierto como el resto de la API. Se exige una clave
     compartida en la cabecera `X-Admin-Key`.
-
-    Si no hay clave configurada en el servidor, el endpoint queda deshabilitado
-    a propósito: es preferible que el panel no funcione a que estos datos se
-    publiquen por un descuido de configuración.
     """
-    if not settings.admin_api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="La analítica no está habilitada: falta configurar ADMIN_API_KEY.",
-        )
-    # `compare_digest` en vez de `==` para no filtrar la clave por el tiempo
-    # que tarda la comparación.
-    if not secrets.compare_digest(x_admin_key, settings.admin_api_key):
-        raise HTTPException(status_code=401, detail="Clave de administración inválida.")
-
+    _verificar_admin_key(x_admin_key)
     dias = max(1, min(dias, 90))  # el TTL de los registros es de 90 días
     return analitica.resumen(dias)
+
+
+@app.get("/admin/conocimiento", response_model=list[DocumentoResumen])
+def admin_listar_conocimiento(x_admin_key: str = Header(default="")):
+    """Lista los documentos de la base de conocimiento, para el panel admin.
+
+    Lee directo de S3 (sin la caché que usa el chat en vivo): el panel debe
+    ver siempre el estado real, no lo que quedó cacheado al arrancar.
+    """
+    _verificar_admin_key(x_admin_key)
+    _verificar_knowledge_s3()
+    try:
+        return listar_documentos_admin()
+    except (BotoCoreError, ClientError):
+        logger.exception("No se pudo listar la base de conocimiento en S3")
+        raise HTTPException(status_code=502, detail="No se pudo consultar S3.")
+
+
+@app.get("/admin/conocimiento/{nombre}", response_model=DocumentoConocimiento)
+def admin_leer_conocimiento(nombre: str, x_admin_key: str = Header(default="")):
+    """Contenido de un documento, para editarlo en el panel admin."""
+    _verificar_admin_key(x_admin_key)
+    _verificar_knowledge_s3()
+    try:
+        contenido = leer_documento_admin(nombre)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except DocumentoNoExiste:
+        raise HTTPException(status_code=404, detail=f"No existe el documento {nombre!r}.")
+    except (BotoCoreError, ClientError):
+        logger.exception("No se pudo leer %r de S3", nombre)
+        raise HTTPException(status_code=502, detail="No se pudo leer el documento de S3.")
+    return DocumentoConocimiento(nombre=nombre, contenido=contenido)
+
+
+@app.put("/admin/conocimiento/{nombre}", response_model=DocumentoConocimiento)
+def admin_guardar_conocimiento(
+    nombre: str, body: GuardarDocumentoRequest, x_admin_key: str = Header(default="")
+):
+    """Crea o actualiza un documento desde el panel admin.
+
+    El cambio queda disponible para el chat de inmediato en esta instancia
+    (se invalida la caché en memoria al guardar) — pero con más de una
+    instancia corriendo, las demás siguen sirviendo la versión vieja hasta
+    que reinicien. Ver DESPLIEGUE_AWS.md, sección 5ter.
+    """
+    _verificar_admin_key(x_admin_key)
+    _verificar_knowledge_s3()
+    try:
+        escribir_documento_admin(nombre, body.contenido)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (BotoCoreError, ClientError):
+        logger.exception("No se pudo guardar %r en S3", nombre)
+        raise HTTPException(status_code=502, detail="No se pudo guardar el documento en S3.")
+    logger.info("Documento de conocimiento %r actualizado desde el panel admin", nombre)
+    return DocumentoConocimiento(nombre=nombre, contenido=body.contenido.strip())
 
 
 def _sugerencia_ayuda_compra(modulo: str | None, respuesta: str | None):
@@ -223,7 +314,7 @@ def _sugerencia_ayuda_compra(modulo: str | None, respuesta: str | None):
         return
     sugerencia = {
         "accion": ACCION_AYUDA_COMPRA,
-        "etiqueta": "¿Quieres que te ayude a hacer tu apuesta?",
+        "etiqueta": etiqueta_ayuda_compra(modulo),
         "contexto": {"modulo": modulo},
     }
     yield f"data: {json.dumps({'sugerencia_accion': sugerencia}, ensure_ascii=False)}\n\n"

@@ -9,7 +9,7 @@ Solo se construye **Doble Play Regional** por ahora (4 cifras, eje cafetero).
 Doble Play **Local** (3 cifras, Quindío) queda pendiente — no hay endpoint de
 parámetros para esa variante todavía.
 
-El valor **no se pregunta**: es fijo, $4.000.
+El valor **no se pregunta**: es fijo, $4.500.
 """
 import re
 
@@ -27,7 +27,7 @@ from app.flujos.motor import (
 )
 from app.tools.loterias_acumulados import loterias_doble_play_regional
 
-VALOR_APUESTA = 4_000
+VALOR_APUESTA = 4_500
 
 CANTIDAD_NUMEROS = 5
 

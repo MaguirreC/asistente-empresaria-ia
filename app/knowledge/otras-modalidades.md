@@ -59,7 +59,7 @@ apuesta y el acumulado inicial:
 |---|---|---|
 | Cifras | 3 | 4 |
 | Dónde se juega | Solo Quindío | Eje cafetero: Armenia, Pereira y Manizales |
-| Valor de la apuesta | $3.000 | $4.000 |
+| Valor de la apuesta | $4.000 | $4.500 |
 | Acumulado inicial | Desde $8.000.000 | Desde $487.394.958 |
 | Paga con un acierto (premio de consuelo) | $75.630 | $1.008.403 |
 

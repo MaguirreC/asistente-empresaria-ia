@@ -327,7 +327,83 @@ App Runner levanta la versión nueva, espera a que pase el health check y recié
 ahí manda tráfico: **el despliegue no corta el servicio**.
 
 > Un cambio en la base de conocimiento (`app/knowledge/*.md`) también requiere
-> reconstruir y redesplegar: los `.md` viajan dentro de la imagen.
+> reconstruir y redesplegar: los `.md` viajan dentro de la imagen — **salvo
+> que se configure `KNOWLEDGE_S3_BUCKET`** (ver sección 5ter): ahí se leen de
+> S3 en cada arranque y no hace falta reconstruir la imagen para editarlos.
+
+---
+
+## 5ter. Base de conocimiento en S3 + panel administrativo
+
+Sin configurar nada acá, el asistente sigue leyendo los `.md` que viajan
+dentro de la imagen, exactamente como hasta ahora.
+
+Si se activa (subiendo los `.md` a un bucket y configurando las variables de
+abajo), el asistente los lee de S3 **una vez por proceso**, al arrancar — no
+en cada pregunta. Si S3 falla (permisos, red, bucket vacío), cae solo al
+respaldo local: nunca se queda sin base de conocimiento por un problema de S3.
+
+**Variables de entorno** (App Runner → tu servicio → Configuration → Environment variables):
+
+| Nombre | Valor | Por qué |
+|---|---|---|
+| `KNOWLEDGE_S3_BUCKET` | el bucket, p. ej. `asistente-ia-conocimiento` | Vacío = sigue leyendo del disco (comportamiento de siempre) |
+| `KNOWLEDGE_S3_PREFIX` | `knowledge/` (default) | Prefijo dentro del bucket donde viven los `.md` |
+
+**Permiso IAM adicional** para `asistente-ia-instance-role` (el mismo del
+paso 2, *Add permissions → Create inline policy → JSON*):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LeerBaseDeConocimiento",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::<BUCKET>",
+        "arn:aws:s3:::<BUCKET>/knowledge/*"
+      ]
+    },
+    {
+      "Sid": "EditarBaseDeConocimientoDesdeAdmin",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": "arn:aws:s3:::<BUCKET>/knowledge/*"
+    }
+  ]
+}
+```
+
+Nombre: `asistente-ia-knowledge-s3`. Los `.md` que suben deben respetar el
+mismo formato que los actuales en `app/knowledge/` (nombre de archivo sin
+espacios, contenido en Markdown); los que empiecen con `_` se ignoran, igual
+que en disco.
+
+> Un cambio subido **directo a S3** (por fuera del panel admin, p. ej. con la
+> consola o `aws s3 cp`) se refleja recién en el próximo arranque del
+> contenedor. Un cambio guardado **desde el panel admin** (abajo) se refleja
+> de inmediato, sin reiniciar — la única excepción es con más de una
+> instancia corriendo (autoescalado): las demás siguen sirviendo la versión
+> vieja hasta que reinicien.
+
+### Panel administrativo: editar documentos sin redesplegar
+
+Tres endpoints, protegidos con la misma cabecera `X-Admin-Key` que
+`/analitica/resumen` (ver sección 5bis) — si `ADMIN_API_KEY` no está
+configurada, responden `503` igual que ese endpoint:
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `GET` | `/admin/conocimiento` | Lista `[{nombre, bytes}]`, leído directo de S3 (sin caché) |
+| `GET` | `/admin/conocimiento/{nombre}` | Contenido de un documento |
+| `PUT` | `/admin/conocimiento/{nombre}` | Crea o actualiza uno (body: `{"contenido": "..."}`) — invalida la caché en memoria de esta instancia al guardar |
+
+`{nombre}` solo admite minúsculas, números y guiones (sin extensión `.md`,
+sin `_` inicial). El front administrativo (`facilisimo-frontend-administrativo`,
+carpeta `asistente-dashboard/` como referencia de patrón) los consume igual
+que ya consume `/analitica/resumen`.
 
 ---
 

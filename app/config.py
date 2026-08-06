@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     # reinicia en cada archivo guardado y esperar en cada una es insufrible.
     precalentar_embeddings: bool = True
 
+    # --- Base de conocimiento ---------------------------------------------
+    # Bucket de S3 con los .md de app/knowledge/, para que el área comercial
+    # pueda editarlos desde el panel administrativo sin reconstruir ni
+    # redesplegar la imagen (el panel es una fase futura; esto solo prepara
+    # la lectura). Vacío por defecto: sin bucket configurado, se sigue
+    # leyendo del disco local — el comportamiento de siempre, y también el
+    # respaldo si S3 falla (ver app/knowledge_loader.py).
+    knowledge_s3_bucket: str = ""
+    knowledge_s3_prefix: str = "knowledge/"
+
     # --- Analítica -------------------------------------------------------
     # Registro de qué preguntan los usuarios, para saber qué le falta a la
     # base de conocimiento. Las preguntas se enmascaran antes de guardarse

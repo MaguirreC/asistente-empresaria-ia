@@ -137,7 +137,7 @@ _AYUDA_COMPRA: dict[str, str] = {
         "Es de la misma familia que Chance Millonario: eliges **2 loterías** "
         "de las que juegan hoy y **5 números de 4 cifras**, con la expectativa "
         "de que 2 de esos números coincidan con el resultado. La apuesta "
-        "cuesta **$4.000**, y solo se juega en el eje cafetero (Armenia, "
+        "cuesta **$4.500**, y solo se juega en el eje cafetero (Armenia, "
         "Pereira y Manizales).\n\n"
         "Si aciertas solo 1 de los 5 números hay un premio de consuelo; con 2 "
         "entras al acumulado, que es **paramutual**.\n\n"
@@ -202,6 +202,23 @@ def es_guion_ayuda_compra(texto: str | None, modulo: str | None) -> bool:
     """Si `texto` es exactamente el guion de ayuda de ese módulo — para no
     ofrecer el botón de ayuda justo después de haber dado esa misma ayuda."""
     return texto is not None and texto == _AYUDA_COMPRA.get(modulo)
+
+
+# Juegos (se apuesta un número) vs. trámites (recargas, paquetes, recaudos):
+# mismo guion de bienvenida y mismo botón de ayuda guiada, pero "apuesta" no
+# describe un trámite — ver `etiqueta_ayuda_compra`.
+_MODULOS_JUEGO = {
+    "chance", "astro", "baloto", "miloto", "loteria",
+    "chance_millonario", "doble_play",
+}
+
+
+def etiqueta_ayuda_compra(modulo: str | None) -> str:
+    """Texto del botón que ofrece el guion de ayuda guiada, según si el
+    módulo es un juego (se apuesta) o un trámite (se paga/recarga)."""
+    if modulo in _MODULOS_JUEGO:
+        return "¿Quieres que te ayude a hacer tu apuesta?"
+    return "¿Quieres que te ayude con este trámite?"
 
 # --- Menú de opciones rápidas --------------------------------------------
 # TODAS se responden en código, sin tocar el modelo. Es la lista única de la
@@ -561,6 +578,15 @@ _DESTINOS: dict[str, str] = {
     "recaudo": "Ir a pagar servicios",
 }
 
+# El front no tiene una pantalla propia de "saldo" — el saldo se ve en el
+# header de la página y se recarga desde el módulo "perfil" (confirmado con
+# el equipo de front). Se mantiene "saldo" como clave interna en todo lo
+# demás (`_DESTINO_POR_ACCION`, `_REQUIEREN_SESION`, los patrones de texto)
+# porque el texto del botón SÍ debe seguir diciendo "Ir a mi saldo" y no "Ir
+# a mi perfil" — solo el identificador de módulo que recibe el front cambia,
+# y ese remapeo se aplica al final, en `destino_navegacion`.
+_MODULO_REAL: dict[str, str] = {"saldo": "perfil"}
+
 # Destino que corresponde a cada opción del menú.
 _DESTINO_POR_ACCION: dict[str, str] = {
     ACCION_REGISTRO: "registro",
@@ -709,7 +735,7 @@ def destino_navegacion(
     if not autenticado and modulo in _REQUIEREN_SESION:
         modulo = "ingreso"
 
-    return {"modulo": modulo, "etiqueta": _DESTINOS[modulo]}
+    return {"modulo": _MODULO_REAL.get(modulo, modulo), "etiqueta": _DESTINOS[modulo]}
 
 
 DESPEDIDA = "¡Con gusto! Si necesitas algo más, aquí estoy. 🍀"

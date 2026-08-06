@@ -80,8 +80,8 @@ canal de servicio al cliente.
   cada uno de los tres valores fijos ($4.500, $5.500, $6.000). Tabla de
   pagos en `otras-modalidades.md`.
 - **Diferencia Doble Play Local vs. Regional.** Local: 3 cifras, solo
-  Quindío, $3.000, acumulado desde $8.000.000. Regional: 4 cifras, eje
-  cafetero (Armenia, Pereira, Manizales), $4.000, acumulado desde
+  Quindío, $4.000, acumulado desde $8.000.000. Regional: 4 cifras, eje
+  cafetero (Armenia, Pereira, Manizales), $4.500, acumulado desde
   $487.394.958. Documentado en `otras-modalidades.md`.
 - **Transparencia del sorteo.** Se envía un delegado como testigo/jurado,
   vigilado por Supersalud, con aval de Coljuegos. Documentado en

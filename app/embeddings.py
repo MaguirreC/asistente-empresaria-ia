@@ -134,6 +134,16 @@ def _embeddings_documentos() -> list[tuple[str, str, list[float]]]:
     return resultado
 
 
+def invalidar_cache() -> None:
+    """Limpia el caché de embeddings calculados.
+
+    La llama `knowledge_loader.escribir_documento_admin` cuando se edita un
+    documento desde el panel administrativo, para que la próxima pregunta
+    recalcule con el contenido nuevo sin tener que reiniciar el proceso.
+    """
+    _embeddings_documentos.cache_clear()
+
+
 def documentos_relevantes(texto_consulta: str, top_k: int = TOP_K) -> str:
     """Los `top_k` documentos más relacionados con la consulta, concatenados.
 
