@@ -21,6 +21,11 @@ compra.
 - Cada cupón trae su **propia fecha de vencimiento** desde que se entrega.
 - **No se puede usar parcialmente**: se usa completo o no se usa.
 
-## Herramientas relacionadas (datos en vivo, no en este documento)
+## Cómo se entera el usuario
 
-- Cupones disponibles del usuario → `GET /coupons/available`
+El cupón se notifica **por correo electrónico** al momento de entregarse.
+**No existe una sección en la app** donde el usuario pueda consultar sus
+cupones disponibles — no le digas que busque en "perfil", "cuenta", "mis
+compras" ni "recompensas". Si pregunta por sus cupones y no le llegó el
+correo o no lo encuentra, oriéntalo a revisar spam o, si aun así no aparece,
+a contactar servicio al cliente (ver `pqrs-y-contacto.md`).

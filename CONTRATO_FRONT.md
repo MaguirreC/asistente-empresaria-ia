@@ -354,6 +354,7 @@ suyas propias).
 | `jugar_doble_play` | Arranca el flujo guiado de Doble Play Regional (ver sección 7.4.2). Mismo trato sin sesión |
 | `jugar_baloto` | Arranca el flujo guiado de Baloto (ver sección 7.4.3). Mismo trato sin sesión |
 | `jugar_miloto` | Arranca el flujo guiado de MiLoto (ver sección 7.4.3). Mismo trato sin sesión |
+| `jugar_betplay` | Arranca el flujo guiado de Betplay: un único paso (el monto a recargar). Mismo trato sin sesión que `jugar_chance` |
 | `ayuda_recargas` | Guion informativo de Recargas, directo (sin pasar por `contexto.modulo`) → además navega a `recarga` |
 | `ayuda_paquetes` | Guion informativo de Paquetes, directo → además navega a `paquete` |
 | `ayuda_recaudos` | Guion informativo de Recaudos, directo → además navega a `recaudo` |
@@ -519,6 +520,7 @@ data: {"done": true}
 | `miloto` | Ir a jugar MiLoto |
 | `loteria` | Ir a comprar Lotería |
 | `chance_millonario` | Ir a Chance Millonario |
+| `betplay` | Ir a recargar mi cuenta de Betplay |
 | `recarga` | Ir a recargas |
 | `paquete` | Ir a paquetes |
 | `recaudo` | Ir a pagar servicios |

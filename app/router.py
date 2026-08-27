@@ -43,6 +43,8 @@ ACCION_JUGAR_CHANCE_MILLONARIO = "jugar_chance_millonario"
 ACCION_JUGAR_DOBLE_PLAY = "jugar_doble_play"
 ACCION_JUGAR_BALOTO = "jugar_baloto"
 ACCION_JUGAR_MILOTO = "jugar_miloto"
+# Flujo guiado de un solo paso (el monto a recargar) — ver `flujos/betplay.py`.
+ACCION_JUGAR_BETPLAY = "jugar_betplay"
 # Guion informativo de un producto, disparado directo desde el submenú (no
 # necesita `contexto.modulo` como el genérico `ayuda_compra`, porque cada uno
 # ya sabe a qué producto corresponde).
@@ -143,6 +145,11 @@ _AYUDA_COMPRA: dict[str, str] = {
         "entras al acumulado, que es **paramutual**.\n\n"
         "¿Ya sabes qué números y loterías quieres, o te explico el plan de "
         "premios primero?"
+    ),
+    "betplay": (
+        "¡Hola! Soy Facibot, y te ayudo a recargar tu cuenta de Betplay.\n\n"
+        "¿Cuánto quieres recargar? Te dejo el acceso directo para completarlo "
+        "abajo. 👇"
     ),
     # Los tres que siguen no son juegos: no se eligen números, pero sí hay
     # decisiones que tomar y, sobre todo, datos que conviene confirmar ANTES de
@@ -251,6 +258,9 @@ _OPCIONES_MENU: tuple[tuple[str, str, str], ...] = (
     # familia que Chance Millonario/Doble Play (no son de doble acierto) — van
     # en su propio submenú en vez de mezclarlos.
     ("🎱 Jugar Baloto o MiLoto", ACCION_JUGAR_LOTOS, SIEMPRE),
+    # Betplay tiene el flujo guiado más corto de todos: un único paso, el
+    # monto a recargar — ver `flujos/betplay.py`.
+    ("🏆 Jugar Betplay", ACCION_JUGAR_BETPLAY, SIEMPRE),
     ("💰 Ver mi saldo", ACCION_VER_SALDO, AUTENTICADO),
     ("🧾 Mis compras", ACCION_MIS_COMPRAS, AUTENTICADO),
     ("📝 Cómo me registro", ACCION_REGISTRO, ANONIMO),
@@ -573,6 +583,7 @@ _DESTINOS: dict[str, str] = {
     "loteria": "Ir a comprar Lotería",
     "chance_millonario": "Ir a Chance Millonario",
     "doble_play": "Ir a Doble Play",
+    "betplay": "Ir a recargar mi cuenta de Betplay",
     "recarga": "Ir a recargas",
     "paquete": "Ir a paquetes",
     "recaudo": "Ir a pagar servicios",
@@ -873,6 +884,14 @@ _PATRONES_AYUDA_COMPRA: dict[str, tuple[re.Pattern, ...]] = {
     "miloto": (
         re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bmi ?loto\b"),
         re.compile(r"\bmi ?loto\b.*\b" + _INTENCION_AMPLIA + r"\b"),
+    ),
+    # Igual que "recarga": el verbo natural también es "recargar", no solo
+    # "jugar/hacer" — se cubren los dos.
+    "betplay": (
+        re.compile(r"\b" + _INTENCION_AMPLIA + r"\b.*\bbetplay\b"),
+        re.compile(r"\bbetplay\b.*\b" + _INTENCION_AMPLIA + r"\b"),
+        re.compile(r"\brecarg\w+\b.{0,20}\bbetplay\b"),
+        re.compile(r"\bbetplay\b.{0,20}\brecarg\w+\b"),
     ),
     # Solo con señales inequívocas de la lotería tradicional. Un "cómo juego la
     # lotería" a secas se deja pasar al modelo: mucha gente le dice "lotería" a

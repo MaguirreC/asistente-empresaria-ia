@@ -7,6 +7,7 @@ agregar Astro o Baloto es escribir otra receta, no código nuevo.
 from app.flujos import (  # noqa: F401  (importar registra los flujos)
     astro,
     baloto,
+    betplay,
     chance,
     chance_millonario,
     doble_play,

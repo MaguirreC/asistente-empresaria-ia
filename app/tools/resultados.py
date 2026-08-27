@@ -197,7 +197,17 @@ def _fecha_legible(fecha_dt: datetime, hoy: datetime) -> str:
 
 
 def _parsear_fecha(texto: str | None, hoy: datetime) -> datetime | None:
-    """Acepta dd-mm-yyyy, dd/mm/yyyy o yyyy-mm-dd. None si no se entiende."""
+    """Acepta dd-mm-yyyy, dd/mm/yyyy, yyyy-mm-dd, o dd-mm (sin año). None si
+    no se entiende.
+
+    El caso sin año es el normal: el usuario casi nunca lo dice ("el 11 de
+    agosto"), y el modelo no tiene forma confiable de saber qué año es "hoy"
+    salvo que se lo digamos — dejarlo adivinar el año llevó a resultados de
+    años pasados (y días de la semana equivocados) pedidos como si fueran de
+    este año. Por eso se resuelve aquí: año actual, y si esa fecha cae en el
+    futuro, se asume que es del año anterior (ej. pedir "25 de diciembre" en
+    enero se refiere a la Navidad que ya pasó, no a una futura).
+    """
     if not texto:
         return hoy
     limpio = texto.strip().replace("/", "-")
@@ -206,7 +216,14 @@ def _parsear_fecha(texto: str | None, hoy: datetime) -> datetime | None:
             return datetime.strptime(limpio, formato).replace(tzinfo=BOGOTA)
         except ValueError:
             continue
-    return None
+    try:
+        sin_anio = datetime.strptime(limpio, "%d-%m")
+    except ValueError:
+        return None
+    candidata = sin_anio.replace(year=hoy.year, tzinfo=BOGOTA)
+    if candidata.date() > hoy.date():
+        candidata = candidata.replace(year=hoy.year - 1)
+    return candidata
 
 
 def resultados_loteria(loteria: str | None = None, fecha: str | None = None) -> str:

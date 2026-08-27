@@ -43,8 +43,11 @@ TOOL_DEFINITIONS = [
         "description": (
             "Consulta el NÚMERO GANADOR de una lotería o sorteo ya realizado. "
             "Úsala siempre que el usuario pregunte por el resultado de una "
-            "lotería, qué número salió, cuál fue el ganador, o si quiere saber "
-            "si ganó. Sirve tanto para los sorteos diarios (Chontico, Sinuano, "
+            "lotería, qué número salió, qué número CAYÓ (forma coloquial muy "
+            "común en Colombia: 'qué cayó en el chontico', 'qué cayó hoy' — "
+            "significa lo mismo que 'qué salió', no lo trates como ambiguo ni "
+            "pidas aclaración), cuál fue el ganador, o si quiere saber si "
+            "ganó. Sirve tanto para los sorteos diarios (Chontico, Sinuano, "
             "Dorado, Astro, Pick 3/4...) como para las loterías tradicionales "
             "principales (Bogotá, Medellín, Boyacá...). "
             "La herramienta se encarga sola de encontrar el sorteo más reciente "
@@ -66,9 +69,13 @@ TOOL_DEFINITIONS = [
                 "fecha": {
                     "type": "string",
                     "description": (
-                        "Fecha del sorteo como dd-mm-aaaa. Solo si el usuario "
-                        "pidió una fecha concreta; si no, omítela y se busca "
-                        "desde hoy hacia atrás."
+                        "Fecha del sorteo. Solo si el usuario pidió una fecha "
+                        "concreta; si no dijo ninguna, omite este campo y se "
+                        "busca desde hoy hacia atrás. Si el usuario SÍ dijo el "
+                        "año, usa dd-mm-aaaa. Si NO dijo el año (lo normal: "
+                        "'el 11 de agosto', 'el 25 de diciembre'), manda SOLO "
+                        "dd-mm — NUNCA inventes ni deduzcas el año tú mismo, "
+                        "el sistema lo resuelve solo con el año correcto."
                     ),
                 },
             },
